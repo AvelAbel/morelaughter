@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Best Answer — Demo (пошаговый)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <h1>Best Answer</h1>
+
+  <!-- Шаг 1. Никнейм -->
+  <section class="card" id="step-1">
+    <h3>Никнейм</h3>
+    <div class="row">
+      <input id="nick" placeholder="Никнейм" />
+      <button id="set-nick">Выбрать никнейм</button>
+      <span id="nick-saved" class="muted"></span>
+      <span id="auth-status" class="muted"></span>
+    </div>
+  </section>
+
+  <!-- Шаг 2. Комната -->
+  <section class="card hidden" id="step-2">
+    <h3>Комната</h3>
+    <div class="row">
+      <button id="back-1">← Назад к никнейму</button>
+    </div>
+    <div class="row">
+      <input id="join-code" placeholder="Код" size="4" maxlength="4" />
+      <button id="join-room">Присоединиться</button>
+      <span id="join-status" class="muted"></span>
+    </div>
+    <div class="row">
+      <button id="create-room">Создать комнату</button>
+    </div>
+  </section>
+
+  
+  <!-- Шаг 3. Лобби -->
+  <section class="card hidden" id="step-3">
+    <h3>Лобби</h3>
+    <div class="row">
+      <button id="back-2">← Назад к комнате</button>
+    </div>
+    <div class="row">
+      <h4>Лобби — код: <code id="room-code-lobby"></code> <button id="copy-code-lobby">Скопировать</button></h4>
+    </div>
+      <div id="lobby-admin" class="hidden">
+      <div class="row">
+        <label>Сколько очков нужно набрать? <input id="target-score" type="number" min="1" max="99" placeholder="10" style="width:4ch"/></label>
+      </div>
+      <div class="row">
+        <label>
+          Источник вопросов:
+          <span>
+            <label><input type="radio" name="qsrc" id="qsrc-preset" value="preset" checked> Готовые вопросы</label>
+            <label><input type="radio" name="qsrc" id="qsrc-players" value="players"> Вопросы от игроков</label>
+          </span>
+        </label>
+      </div>
+      <div class="row hidden" id="row-question-seconds">
+        <label>Время на вопрос, сек <input id="question-seconds" type="number" min="10" step="5" value="60" style="width:5ch"/></label>
+      </div>
+      <div class="row">
+        <button id="start-game">Начать игру</button>
+      </div>
+    </div>
+    <div class="row"><div class="muted">Игроки:</div></div>
+    <ul id="players-list"></ul>
+    
+  </section>
+
+<!-- Шаг 4. Раунд -->
+  <section class="card hidden" id="step-4">
+    <h3>Игра</h3>
+    <div class="row">
+      <button id="back-2">← Назад к комнате</button>
+    </div>
+    <div class="row">
+      <strong>Код комнаты:</strong>
+      <code id="room-code-2">—</code>
+    </div>
+    <div class="row">
+      <strong>Фаза:</strong>
+      <code id="phase-code-2">—</code>
+    </div>
+    <!-- Режим: Вопросы от игроков (фаза придумывания) -->
+    <div class="row hidden" id="compose-row-message">
+      <div><span id="compose-message"></span> <strong id="compose-timer"></strong></div>
+    </div>
+    <div class="row hidden" id="compose-row-input">
+      <input id="custom-question" placeholder="Введите свой вопрос" class="wide" />
+      <button id="submit-custom-question">Отправить вопрос</button>
+    </div>
+    <div class="row"><div><strong>Вопрос:</strong> <span id="question-text">—</span></div></div>
+    <div class="row">
+      <input id="answer-text" placeholder="Ваш ответ" class="wide" />
+      <button id="submit-answer">Отправить ответ</button>
+    </div>
+    <div class="row">
+      <div id="answers-list" class="wide hidden"></div>
+    </div>
+    <div class="row">
+      <button id="vote" class="hidden" disabled>Выбрать лучший ответ</button>
+    </div>
+    <div class="row hidden" id="winner-banner"></div>
+    <div class="row">
+      <button id="next-round" class="hidden">Следующий раунд</button>
+    </div>
+    <div class="row">
+      <button id="end-game" class="hidden">Завершить игру</button>
+    </div>
+    <!-- Список игроков в раунде с галочками отправивших -->
+    <div class="row"><div class="muted">Игроки:</div></div>
+    <ul id="players-list-round"></ul>
+    <div id="room-state" class="muted"></div>
+    <div id="round-state" class="muted"></div>
+  </section>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
