@@ -7,25 +7,35 @@
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
-  <h1>Best Answer</h1>
+  <h1>MORELAUGHTER</h1>
+
+  <!-- Подзаголовок игры -->
+  <div class="row hidden" id="game-subtitle">
+    <h3 class="muted">Best Answer</h3>
+  </div>
+
+  <!-- Кнопки навигации сверху -->
+  <div class="row hidden" id="back-1-top">
+    <button id="back-1">← в меню игр</button>
+  </div>
+  <div class="row hidden" id="back-2-top">
+    <button id="back-2">← Назад</button>
+  </div>
 
   <!-- Шаг 1. Никнейм -->
-  <section class="card" id="step-1">
-    <h3>Никнейм</h3>
+  <section class="card hidden" id="step-1">
+    <h3>Ваш никнейм</h3>
     <div class="row">
       <input id="nick" placeholder="Никнейм" />
-      <button id="set-nick">Выбрать никнейм</button>
+      <button id="set-nick">➤</button>
       <span id="nick-saved" class="muted"></span>
       <span id="auth-status" class="muted"></span>
     </div>
   </section>
 
-  <!-- Шаг 2. Комната -->
+  <!-- Шаг 2. Подключение -->
   <section class="card hidden" id="step-2">
-    <h3>Комната</h3>
-    <div class="row">
-      <button id="back-1">← Назад к никнейму</button>
-    </div>
+    <h3>Подключение</h3>
     <div class="row">
       <input id="join-code" placeholder="Код" size="4" maxlength="4" />
       <button id="join-room">Присоединиться</button>
@@ -40,10 +50,7 @@
   <!-- Шаг 3. Лобби -->
   <section class="card hidden" id="step-3">
     <h3>Лобби</h3>
-    <div class="row">
-      <button id="back-2">← Назад к комнате</button>
-    </div>
-    <div class="row">
+    <div class="row" style="margin-top: -4px;">
       <h4>Лобби — код: <code id="room-code-lobby"></code> <button id="copy-code-lobby">Скопировать</button></h4>
     </div>
       <div id="lobby-admin" class="hidden">
@@ -59,8 +66,11 @@
           </span>
         </label>
       </div>
-      <div class="row hidden" id="row-question-seconds">
-        <label>Время на вопрос, сек <input id="question-seconds" type="number" min="10" step="5" value="60" style="width:5ch"/></label>
+      <div class="row" id="row-question-seconds">
+        <label>Время на вопрос/ответ, сек <input id="question-seconds" type="number" min="10" max="999" step="5" value="60" style="width:5ch"/></label>
+      </div>
+      <div class="row" id="row-vote-seconds">
+        <label>Время на голосование, сек <input id="vote-seconds" type="number" min="5" max="999" step="5" value="45" style="width:5ch"/></label>
       </div>
       <div class="row">
         <button id="start-game">Начать игру</button>
@@ -74,9 +84,6 @@
 <!-- Шаг 4. Раунд -->
   <section class="card hidden" id="step-4">
     <h3>Игра</h3>
-    <div class="row">
-      <button id="back-2">← Назад к комнате</button>
-    </div>
     <div class="row">
       <strong>Код комнаты:</strong>
       <code id="room-code-2">—</code>
@@ -93,7 +100,15 @@
       <input id="custom-question" placeholder="Введите свой вопрос" class="wide" />
       <button id="submit-custom-question">Отправить вопрос</button>
     </div>
+    <!-- Фаза голосования: таймер -->
+    <div class="row hidden" id="voting-row-message">
+      <div>Голосование, осталось: <strong id="voting-timer"></strong></div>
+    </div>
     <div class="row"><div><strong>Вопрос:</strong> <span id="question-text">—</span></div></div>
+    <!-- Фаза ответов: таймер -->
+    <div class="row hidden" id="answering-row-message">
+      <div>Ответы, осталось: <strong id="answering-timer"></strong></div>
+    </div>
     <div class="row">
       <input id="answer-text" placeholder="Ваш ответ" class="wide" />
       <button id="submit-answer">Отправить ответ</button>
