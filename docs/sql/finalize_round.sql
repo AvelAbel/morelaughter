@@ -3,6 +3,10 @@ create unique index if not exists votes_round_voter_uniq on public.votes (round_
 
 -- 2) Маркер финализации раунда
 alter table public.rounds add column if not exists finalized_at timestamptz;
+-- Используем ended_at как дедлайн фазы (в т.ч. голосования)
+alter table public.rounds add column if not exists ended_at timestamptz;
+-- Параметр длительности голосования в комнатах
+alter table public.rooms add column if not exists vote_seconds int;
 
 -- 3) Идемпотентная серверная финализация
 create or replace function public.finalize_round(p_round_id uuid)
