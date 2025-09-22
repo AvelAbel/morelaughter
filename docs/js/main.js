@@ -5,8 +5,6 @@ import { ensureUser, createRoom, joinByCode, startGameFromLobby, setActiveStatus
 import { refreshRoomState, startRound, submitAnswer, startVoting, loadAnswers, vote, finalize, submitCustomQuestion } from './round.js';
 
 // Инициализация
-el('nick').value = state.nickname;
-showStep(state.nickname ? 2 : 1);
 (async () => {
   const { data } = await supabase.auth.getUser();
   state.currentUser = data?.user || null;
@@ -17,6 +15,15 @@ showStep(state.nickname ? 2 : 1);
 const qp = new URLSearchParams(location.search);
 const codeParam = (qp.get('code') || '').toUpperCase();
 if (codeParam) el('join-code').value = codeParam;
+// Поддержка параметра шага (?step=1..4) для навигации между экранами
+const stepParam = parseInt(qp.get('step') || '', 10);
+if (stepParam >= 1 && stepParam <= 4) {
+  showStep(stepParam);
+} else {
+  showStep(state.nickname ? 2 : 1);
+}
+// После того как выбран шаг, подставляем ник (если нужно)
+const nickEl = el('nick'); if (nickEl) nickEl.value = state.nickname;
 
 // Шаг 1
 const btnSetNick = el('set-nick');
@@ -30,7 +37,8 @@ if (btnSetNick) btnSetNick.onclick = async () => {
     localStorage.setItem('demo_nick', state.nickname);
     el('nick-saved').textContent = `Сохранено: ${state.nickname}`;
     if (s) s.textContent = `uid: ${u.id.slice(0,8)}…`;
-    showStep(2);
+    // Переход на страницу выбора игры
+    window.location.href = 'games.html';
   } catch (e) {
     if (s) s.textContent = 'Enable Anonymous auth in Supabase';
     alert(e?.message || e);
@@ -38,7 +46,25 @@ if (btnSetNick) btnSetNick.onclick = async () => {
 };
 
 // Назад
-const btnBack1 = el('back-1'); if (btnBack1) btnBack1.onclick = () => showStep(1);
+const btnBack1 = el('back-1'); if (btnBack1) btnBack1.onclick = () => { window.location.href = 'games.html'; };
+// Дублирующийся back-2 наверху: ведёт на шаг 2 (Подключение)
+document.querySelectorAll('#back-2').forEach((btn) => {
+  btn.onclick = async () => {
+    try {
+      state.autoJumpToRound = false;          // блокируем автопереход
+      await setActiveStatus(false);           // AFK
+      if (state.roomChannel) {                // снимем подписку комнаты
+        try { supabase.removeChannel(state.roomChannel); } catch {}
+        state.roomChannel = null;
+      }
+      const { cleanupSubscriptions } = await import('./round.js');
+      if (cleanupSubscriptions) cleanupSubscriptions();
+      state.currentRoundId = null;            // очистка состояния комнаты/раунда
+    } finally {
+      showStep(2);
+    }
+  };
+});
 // На странице есть два элемента с id="back-2" (в лобби и в раунде).
 // Привяжем обработчик ко всем найденным, чтобы у игроков тоже работала кнопка
 // и перед возвратом пометим игрока как неактивного.
@@ -88,13 +114,19 @@ if (btnStartGame) btnStartGame.onclick = async () => {
   try {
     // Сначала сохраняем настройки
     const targetScoreInput = el('target-score');
-    const target = parseInt((targetScoreInput && targetScoreInput.value) || '0', 10) || 0;
+    const targetRaw = parseInt((targetScoreInput && targetScoreInput.value) || '0', 10) || 0;
+    const target = Math.min(99, Math.max(1, targetRaw));
     const qsInput = el('question-seconds');
-    const secs = parseInt((qsInput && qsInput.value) || '60', 10) || 60;
+    const secsRaw = parseInt((qsInput && qsInput.value) || '60', 10) || 60;
+    const secs = Math.min(999, Math.max(1, secsRaw));
+    const vsInput = el('vote-seconds');
+    const vsecsRaw = parseInt((vsInput && vsInput.value) || '45', 10) || 45;
+    const vsecs = Math.min(999, Math.max(1, vsecsRaw));
     const src = (document.getElementById('qsrc-players')?.checked) ? 'players' : 'preset';
-    await supabase.from('rooms').update({ target_score: target, question_seconds: secs, question_source: src }).eq('id', state.currentRoomId);
+    await supabase.from('rooms').update({ target_score: target, question_seconds: secs, vote_seconds: vsecs, question_source: src }).eq('id', state.currentRoomId);
     if (targetScoreInput) { targetScoreInput.dataset.dirty=''; targetScoreInput.value=String(target); }
     if (qsInput) { qsInput.dataset.dirty=''; qsInput.value = String(secs); }
+    if (vsInput) { vsInput.dataset.dirty=''; vsInput.value = String(vsecs); }
     const rbPreset  = document.getElementById('qsrc-preset');
     const rbPlayers = document.getElementById('qsrc-players');
     if (rbPreset && rbPlayers) {

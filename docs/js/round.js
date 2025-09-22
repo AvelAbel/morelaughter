@@ -5,6 +5,39 @@ let answersSub = null;
 let roundsSub = null;
 let roomsSub = null;
 let votesSub = null;
+
+// Детеминированная случайная перестановка по seed (одинаковая для всех в раунде)
+function seed32(s){ let h = 2166136261; for (const c of String(s||'')) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+function rng(a){ return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t ^= t + Math.imul(t ^ t >>> 7, 61 | t); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function shuffleSeeded(arr, seed){ const r = rng(seed32(seed)); const out = arr.slice(); for (let i = out.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [out[i], out[j]] = [out[j], out[i]]; } return out; }
+
+// Автоподача голоса при таймауте, если пользователь выбрал вариант, но не нажал кнопку
+async function autoSubmitPendingVote() {
+  try {
+    if (!state.currentRoundId) return;
+    if (state.myVoted) return;
+    const checked = document.querySelector('input[name="vote-answer"]:checked');
+    const ansId = checked ? checked.value : '';
+    if (!ansId) return;
+    let uid = state.currentUser?.id || null;
+    if (!uid) {
+      try {
+        const { data: g } = await supabase.auth.getUser();
+        uid = g?.user?.id || null;
+        if (!uid) {
+          const { data, error } = await supabase.auth.signInAnonymously();
+          if (!error) uid = data?.user?.id || null;
+        }
+        if (uid && !state.currentUser) state.currentUser = { id: uid };
+      } catch {}
+    }
+    if (!uid) return;
+    try {
+      await supabase.from('votes').insert({ round_id: state.currentRoundId, voter_id: uid, answer_id: ansId });
+      state.myVoted = true;
+    } catch {}
+  } catch {}
+}
 async function resubscribeAnswersRealtime() {
   if (answersSub) { try { await supabase.removeChannel(answersSub); } catch {} }
   if (!state.currentRoundId) return;
@@ -105,12 +138,16 @@ export async function refreshRoomState() {
   }
     
   console.log('Players query result:', { players, playersError });
-    
+  // Загружаем информацию о комнате (roomInfo)
   const { data: roomInfo, error: roomError } = await supabase
-    .from('rooms').select('status, owner_id, target_score, question_seconds, question_source').eq('id', state.currentRoomId).single();
-    
+    .from('rooms')
+    .select('id, owner_id, status, target_score, question_seconds, vote_seconds, question_source')
+    .eq('id', state.currentRoomId)
+    .single();
   console.log('Room info query result:', { roomInfo, roomError });
-    
+  // Определяем хоста для авто-действий по данным room_players
+  const amIHost = (players || []).some(p => p.player_id === state.currentUser?.id && p.is_host);
+  
   const { data: rounds } = await supabase
     .from('rounds')
     .select('id, phase, question_id, author_id, compose_deadline, question_text, started_at, ended_at')
@@ -124,6 +161,8 @@ export async function refreshRoomState() {
     state.myVoted = false;
     state.selectedAnswerId = null;
     const container = el('answers-list'); if (container) container.innerHTML = '';
+    // Очистка поля ответа при начале нового раунда
+    const answerInputNewRound = el('answer-text'); if (answerInputNewRound) answerInputNewRound.value = '';
     resubscribeAnswersRealtime();   // подписка на ответы текущего раунда
     resubscribeVotesRealtime();     // подписка на голоса текущего раунда
   }
@@ -154,6 +193,10 @@ export async function refreshRoomState() {
     if (ti) {
       if (!ti.dataset._init) {
         ti.addEventListener('input', () => { ti.dataset.dirty = '1'; });
+        ti.addEventListener('change', () => {
+          const val = Math.min(99, Math.max(1, Number(ti.value || 0)));
+          ti.value = String(val);
+        });
         ti.dataset._init = '1';
       }
       if (roomInfo) {
@@ -172,6 +215,10 @@ export async function refreshRoomState() {
     if (qs) {
       if (!qs.dataset._init) {
         ['input','change'].forEach(ev => qs.addEventListener(ev, () => { qs.dataset.dirty = '1'; }));
+        qs.addEventListener('change', () => {
+          const val = Math.min(999, Math.max(1, Number(qs.value || 0)));
+          qs.value = String(val);
+        });
         qs.dataset._init = '1';
       }
       if (roomInfo) {
@@ -184,6 +231,28 @@ export async function refreshRoomState() {
     }
   } catch {}
 
+  // Подставляем время на голосование из БД с защитой от перезаписи пользовательского ввода
+  try {
+    const vs = document.getElementById('vote-seconds');
+    if (vs) {
+      if (!vs.dataset._init) {
+        ['input','change'].forEach(ev => vs.addEventListener(ev, () => { vs.dataset.dirty = '1'; }));
+        vs.addEventListener('change', () => {
+          const val = Math.min(999, Math.max(1, Number(vs.value || 0)));
+          vs.value = String(val);
+        });
+        vs.dataset._init = '1';
+      }
+      if (roomInfo) {
+        const dbVal = Number(roomInfo.vote_seconds || 0);
+        const isDirty = vs.dataset.dirty === '1';
+        if (!isDirty && document.activeElement !== vs && dbVal > 0) {
+          vs.value = String(dbVal);
+        }
+      }
+    }
+  } catch {}
+
   // Подставляем источник вопросов
   try {
     const rbPreset = document.getElementById('qsrc-preset');
@@ -191,13 +260,13 @@ export async function refreshRoomState() {
     const rowQS = document.getElementById('row-question-seconds');
     if (rbPreset && !rbPreset.dataset._init) {
       ['change','input','click'].forEach(ev =>
-        rbPreset.addEventListener(ev, () => { rbPreset.dataset.dirty='1'; if (rbPlayers) rbPlayers.dataset.dirty='1'; if (rowQS) rowQS.classList.add('hidden'); })
+        rbPreset.addEventListener(ev, () => { rbPreset.dataset.dirty='1'; if (rbPlayers) rbPlayers.dataset.dirty='1'; /* question-seconds виден всегда */ })
       );
       rbPreset.dataset._init = '1';
     }
     if (rbPlayers && !rbPlayers.dataset._init) {
       ['change','input','click'].forEach(ev =>
-        rbPlayers.addEventListener(ev, () => { if (rbPreset) rbPreset.dataset.dirty='1'; rbPlayers.dataset.dirty='1'; if (rowQS) rowQS.classList.remove('hidden'); })
+        rbPlayers.addEventListener(ev, () => { if (rbPreset) rbPreset.dataset.dirty='1'; rbPlayers.dataset.dirty='1'; /* question-seconds виден всегда */ })
       );
       rbPlayers.dataset._init = '1';
     }
@@ -206,7 +275,7 @@ export async function refreshRoomState() {
     if (roomInfo?.question_source && rbPreset && rbPlayers && !isDirty && document.activeElement?.name !== 'qsrc') {
       rbPreset.checked  = roomInfo.question_source === 'preset';
       rbPlayers.checked = roomInfo.question_source === 'players';
-      if (rowQS) rowQS.classList.toggle('hidden', roomInfo.question_source !== 'players');
+      if (rowQS) rowQS.classList.remove('hidden');
     }
   } catch {}
 
@@ -215,9 +284,12 @@ export async function refreshRoomState() {
   const composeTimer = el('compose-timer');
   const composeRowMsg = document.getElementById('compose-row-message');
   const composeRowInput = document.getElementById('compose-row-input');
-  // reset compose UI
+  const answeringRow = document.getElementById('answering-row-message');
+  const answeringTimer = document.getElementById('answering-timer');
+  // reset compose UI (answering timer не скрываем, если сейчас answering)
   if (composeRowMsg) composeRowMsg.classList.add('hidden');
   if (composeRowInput) composeRowInput.classList.add('hidden');
+  if (answeringRow && (latest?.phase !== 'answering')) answeringRow.classList.add('hidden');
 
   // Обновляем текст вопроса над полем ответа
   const qText = el('question-text');
@@ -231,10 +303,70 @@ export async function refreshRoomState() {
     state.mySubmitted = false;
     state.myVoted = false;
     state.selectedAnswerId = null;
-    const answerInputOnEnter = el('answer-text'); if (answerInputOnEnter) answerInputOnEnter.classList.remove('hidden');
+    const answerInputOnEnter = el('answer-text');
+    if (answerInputOnEnter) {
+      // Очистка поля при входе в answering новой фазы
+      try { answerInputOnEnter.value = ''; } catch {}
+      answerInputOnEnter.classList.remove('hidden');
+    }
     const submitBtnOnEnter = el('submit-answer'); if (submitBtnOnEnter) submitBtnOnEnter.classList.remove('hidden');
     // Переподписка на ответы/голоса для надёжности, если roundId уже известен
     try { if (state.currentRoundId) { resubscribeAnswersRealtime(); resubscribeVotesRealtime(); } } catch {}
+
+    // Таймер answering по rounds.ended_at
+    const deadlineMsAns = latest?.ended_at ? Date.parse(latest.ended_at) : 0;
+    if (deadlineMsAns > 0) {
+      if (answeringRow) answeringRow.classList.remove('hidden');
+      const renderAnsTimer = () => {
+        const left = Math.max(0, Math.ceil((deadlineMsAns - Date.now())/1000));
+        if (answeringTimer) answeringTimer.textContent = String(left).padStart(2,'0');
+        return left;
+      };
+      renderAnsTimer();
+      try { if (state._answeringTimerId) clearInterval(state._answeringTimerId); } catch {}
+      state._answeringTimerId = setInterval(async () => {
+        const left = renderAnsTimer();
+        if (left <= 0) {
+          clearInterval(state._answeringTimerId);
+          // Авто-отправка введённого ответа если не пустой и не отправляли
+          try {
+            if (!state.mySubmitted) {
+              const inputEl = el('answer-text');
+              const txt = (inputEl?.value || '').trim();
+              if (txt) {
+                // Локально отправим, как обычный submitAnswer, но без повторного таймера
+                const btn = el('submit-answer'); if (btn) btn.disabled = true;
+                try {
+                  let uid = state.currentUser?.id || null;
+                  if (!uid) {
+                    try {
+                      const { data: g } = await supabase.auth.getUser();
+                      uid = g?.user?.id || null;
+                      if (!uid) {
+                        const { data, error } = await supabase.auth.signInAnonymously();
+                        if (!error) uid = data?.user?.id || null;
+                      }
+                      if (uid && !state.currentUser) state.currentUser = { id: uid };
+                    } catch {}
+                  }
+                  if (uid && state.currentRoundId) {
+                    const { error } = await supabase.from('answers').insert({ round_id: state.currentRoundId, author_id: uid, text: txt });
+                    if (!error) { state.mySubmitted = true; }
+                  }
+                } catch {}
+                finally { const b = el('submit-answer'); if (b) b.disabled = false; }
+              }
+            }
+          } catch {}
+          // Переход к голосованию (только у хоста)
+          try {
+            if (state.isHost && state.currentRoundId) {
+              await startVoting();
+            }
+          } catch (e) { console.error('Auto startVoting after answering timeout failed:', e); }
+        }
+      }, 250);
+    }
   }
   // Предварительно узнаём, проголосовал ли текущий пользователь (чтобы не мигал UI)
   if (state.currentPhase === 'voting' && state.currentRoundId) {
@@ -263,6 +395,80 @@ export async function refreshRoomState() {
   } catch {}
   if (state.mySubmitted) myAnswered = true;
   if (state.currentPhase === 'voting') {
+    // Fallback: при входе в голосование после answering отправим набранный текст, если он не был отправлен
+    if (prevPhase === 'answering') {
+      try {
+        if (!state.mySubmitted && state.currentRoundId) {
+          const txt = (el('answer-text')?.value || '').trim();
+          if (txt) {
+            let uid = state.currentUser?.id || null;
+            if (!uid) {
+              try {
+                const { data: g } = await supabase.auth.getUser();
+                uid = g?.user?.id || null;
+                if (!uid) {
+                  const { data, error } = await supabase.auth.signInAnonymously();
+                  if (!error) uid = data?.user?.id || null;
+                }
+                if (uid && !state.currentUser) state.currentUser = { id: uid };
+              } catch {}
+            }
+            if (uid) {
+              const { data: exists } = await supabase
+                .from('answers')
+                .select('id')
+                .eq('round_id', state.currentRoundId)
+                .eq('author_id', uid)
+                .maybeSingle();
+              if (!exists) {
+                try { await supabase.from('answers').insert({ round_id: state.currentRoundId, author_id: uid, text: txt }); state.mySubmitted = true; }
+                catch {}
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+    // Показ таймера голосования
+    const votingRow = document.getElementById('voting-row-message');
+    const votingTimer = document.getElementById('voting-timer');
+    if (votingRow) votingRow.classList.remove('hidden');
+    const deadlineMsVoting = latest?.ended_at ? Date.parse(latest.ended_at) : 0;
+    const renderVotingTimer = () => {
+      const left = Math.max(0, Math.ceil((deadlineMsVoting - Date.now())/1000));
+      if (votingTimer) votingTimer.textContent = String(left).padStart(2,'0');
+      return left;
+    };
+    if (deadlineMsVoting > 0) {
+      const leftNow = renderVotingTimer();
+      // Если дедлайн уже прошёл к моменту обновления UI — финализируем сразу (у хоста)
+      if (leftNow <= 0) {
+        // Немедленная автоподача выбранного голоса, если уже истёк дедлайн
+        try { await autoSubmitPendingVote(); } catch {}
+        try {
+          if (amIHost && latest && latest.phase === 'voting' && state.currentRoundId && !state.finalizing) {
+            state.finalizing = true;
+            try { await finalize(); } finally { state.finalizing = false; }
+          }
+        } catch (e) { console.error('Immediate finalize on voting timeout failed:', e); }
+      }
+      try { if (state._votingTimerId) clearInterval(state._votingTimerId); } catch {}
+      state._votingTimerId = setInterval(async () => {
+        const left = renderVotingTimer();
+        if (left <= 0) {
+          clearInterval(state._votingTimerId);
+          // Перед финализацией: если у игрока выбран вариант — отправляем его голос
+          try { await autoSubmitPendingVote(); } catch {}
+          // Таймаут голосования → финализация у хоста
+          try {
+            if (amIHost && latest && latest.phase === 'voting' && state.currentRoundId && !state.finalizing) {
+              state.finalizing = true;
+              try { await finalize(); } finally { state.finalizing = false; }
+            }
+          } catch (e) { console.error('Auto finalize on voting timeout failed:', e); }
+        }
+      }, 250);
+    }
     // Показать список ответов и кнопку голосования только во время голосования
     const answersContainer = el('answers-list');
     if (answersContainer) answersContainer.classList.remove('hidden');
@@ -283,15 +489,31 @@ export async function refreshRoomState() {
     // На каждом обновлении: восстановить выбор и применить disabled по myVoted
     const contNow = el('answers-list');
     if (contNow) {
+      // Применяем правило запрета самоголоса при 3+ вариантах и общий disabled по myVoted
+      const inputs = Array.from(contNow.querySelectorAll('input[name="vote-answer"]'));
+      const disallowSelf = inputs.length >= 3;
+      const myUid = state.currentUser?.id || null;
+      inputs.forEach(inp => {
+        const isOwn = myUid && inp.dataset.authorId === myUid;
+        if (disallowSelf && isOwn && !state.myVoted) {
+          inp.disabled = true;
+          inp.parentElement?.classList.add('muted');
+          if (inp.checked) inp.checked = false;
+        } else {
+          inp.disabled = !!state.myVoted;
+        }
+      });
       const prevSel = state.selectedAnswerId || (contNow.querySelector('input[name="vote-answer"]:checked')?.value || null);
       if (prevSel) {
         const node = contNow.querySelector(`input[name="vote-answer"][value="${prevSel}"]`);
         if (node) node.checked = true;
       }
-      contNow.querySelectorAll('input[name="vote-answer"]').forEach(inp => { inp.disabled = !!state.myVoted; });
       contNow.classList.toggle('muted', !!state.myVoted);
     }
   } else if (state.currentPhase === 'results') {
+    // Скрываем таймер голосования
+    try { if (state._votingTimerId) clearInterval(state._votingTimerId); } catch {}
+    const votingRow2 = document.getElementById('voting-row-message'); if (votingRow2) votingRow2.classList.add('hidden');
     // Показать результаты: ответы с количеством голосов (🔥)
     const answersContainer = el('answers-list');
     if (answersContainer) answersContainer.classList.remove('hidden');
@@ -302,6 +524,7 @@ export async function refreshRoomState() {
     if (prevPhase !== 'results') {
       try {
         const { data: ans } = await supabase.from('answers').select('id, text, author_id').eq('round_id', state.currentRoundId);
+        const ordered = shuffleSeeded(ans || [], state.currentRoundId);
         const { data: votesAll } = await supabase.from('votes').select('answer_id').eq('round_id', state.currentRoundId);
         const counts = new Map();
         (votesAll || []).forEach(v => counts.set(v.answer_id, (counts.get(v.answer_id) || 0) + 1));
@@ -309,7 +532,7 @@ export async function refreshRoomState() {
         if (container) {
           container.innerHTML = '';
           const wrap = document.createElement('div');
-          (ans || []).forEach(a => {
+          ordered.forEach(a => {
             const flames = '🔥'.repeat(counts.get(a.id) || 0);
             const row = document.createElement('div');
             row.textContent = `${a.text} ${flames}`.trim();
@@ -359,6 +582,13 @@ export async function refreshRoomState() {
     const nextBtnOther = el('next-round'); if (nextBtnOther) nextBtnOther.classList.add('hidden');
     const answerInput = el('answer-text');
     const submitBtn = el('submit-answer');
+    // Управление таймером answering: скрываем и останавливаем только если фаза НЕ answering
+    if (state.currentPhase !== 'answering') {
+      try { if (state._answeringTimerId) clearInterval(state._answeringTimerId); } catch {}
+      if (answeringRow) answeringRow.classList.add('hidden');
+    } else {
+      if (answeringRow) answeringRow.classList.remove('hidden');
+    }
     if (state.currentPhase === 'answering') {
       // Показываем поле всем, кто ещё не отправил ответ; если уже отправил — скрыто
       if (answerInput) answerInput.classList.remove('hidden');
@@ -536,20 +766,21 @@ export async function refreshRoomState() {
     const rs3 = el('round-state'); if (rs3) rs3.textContent = '';
   }
 
-  // Автопереход к голосованию: когда все ожидаемые игроки отправили ответ
+  // Автопереход к голосованию: когда все игроки комнаты отправили ответ
   try {
-    if (state.isHost && latest && latest.phase === 'answering') {
-      const respondents = (roomInfo?.question_source === 'players') ? (listToRender || []) : activePlayers;
-      if (respondents.length > 0) {
-        const allAnswered = respondents.every(p => submittedMap.get(p.player_id));
+    if (latest && latest.phase === 'answering' && amIHost) {
+      const respondentsIds = (players || []).map(p => p.player_id);
+      if (respondentsIds.length > 0) {
+        const allAnswered = respondentsIds.every(id => submittedMap.get(id));
         if (allAnswered) {
-          await startVoting();
+          // Запускаем голосование только если раунд ещё в answering
+          try { await startVoting(); } catch (e) { console.error('startVoting failed:', e); }
         }
       }
     }
   } catch (e) { console.error('Auto startVoting failed:', e); }
 
-  // --- Авто-финализация: проголосовали все УЧАСТНИКИ (авторы ответов) ---
+  // --- Авто-финализация: если проголосовали все АВТОРЫ ответов (единая политика) ---
   try {
     if (latest?.phase === 'voting' && state.currentRoundId) {
       const [{ data: votes }, { data: ans }] = await Promise.all([
@@ -558,9 +789,10 @@ export async function refreshRoomState() {
       ]);
       const voters = new Set((votes || []).map(v => v.voter_id));
       const participants = new Set((ans || []).map(a => a.author_id));
-      const amIHost = (players || []).some(p => p.player_id === state.currentUser?.id && p.is_host);
-      if (participants.size > 0 && voters.size >= participants.size && amIHost && !state.finalizing) {
-        await finalize();
+      const allAuthorsVoted = participants.size > 0 && Array.from(participants).every(id => voters.has(id));
+      if (allAuthorsVoted && amIHost && !state.finalizing) {
+        state.finalizing = true;
+        try { await finalize(); } finally { state.finalizing = false; }
       }
     }
   } catch (e) { console.error('Auto finalize failed:', e); }
@@ -634,7 +866,7 @@ export async function startRound() {
     const { data: round, error: e2 } = await supabase
       .from('rounds')
       .insert({ room_id: state.currentRoomId, phase: 'composing', question_source: 'players',
-                author_id: authorId, compose_deadline: deadline })
+                author_id: authorId, compose_deadline: deadline, started_at: new Date().toISOString() })
       .select().single();
     if (e2) return alert(e2.message);
     state.currentRoundId = round.id;
@@ -650,8 +882,9 @@ export async function startRound() {
   }
   const btnNext = el('next-round'); if (btnNext) btnNext.disabled = true;
   try {
+    const answeringDeadline = new Date(Date.now() + Number(cfg?.question_seconds || 60) * 1000).toISOString();
     const { data: round, error: e2 } = await supabase
-      .from('rounds').insert({ room_id: state.currentRoomId, question_id: qid, phase: 'answering', question_source: cfg?.question_source || 'preset' })
+      .from('rounds').insert({ room_id: state.currentRoomId, question_id: qid, phase: 'answering', question_source: cfg?.question_source || 'preset', ended_at: answeringDeadline, started_at: new Date().toISOString() })
       .select().single();
     if (e2) return alert(e2.message);
     state.currentRoundId = round.id;
@@ -735,8 +968,25 @@ export async function submitAnswer() {
 
 export async function startVoting() {
   if (!state.currentRoundId) return alert('Раунд не начат');
-  const { error } = await supabase.from('rounds').update({ phase: 'voting' }).eq('id', state.currentRoundId);
+  // Устанавливаем дедлайн голосования на основе rooms.vote_seconds
+  let voteSecs = 45;
+  try {
+    const { data: cfgRoom } = await supabase.from('rooms').select('vote_seconds').eq('id', state.currentRoomId).single();
+    voteSecs = Number(cfgRoom?.vote_seconds || 45) || 45;
+  } catch {}
+  const deadline = new Date(Date.now() + voteSecs * 1000).toISOString();
+  // Переводим в voting ТОЛЬКО из answering, чтобы не перезапускать голосование
+  const { data: upd, error } = await supabase
+    .from('rounds')
+    .update({ phase: 'voting', ended_at: deadline })
+    .eq('id', state.currentRoundId)
+    .eq('phase', 'answering')
+    .select('id');
   if (error) return alert(error.message);
+  if (!upd || upd.length === 0) {
+    // Фаза уже не answering — тихо выходим
+    return;
+  }
   await refreshRoomState();
   // Автоматически подгружаем ответы для голосования
   try {
@@ -755,16 +1005,27 @@ export async function loadAnswers() {
     .select('id, text, author_id')
     .eq('round_id', state.currentRoundId);
   if (error) return alert(error.message);
+  const ordered = shuffleSeeded(ans || [], state.currentRoundId);
+  const myUid = state.currentUser?.id || null;
+  const disallowSelf = (ordered.length >= 3);
   const container = el('answers-list');
   if (container) {
     container.innerHTML = '';
     const ul = document.createElement('div');
-    (ans || []).forEach(a => {
+    ordered.forEach(a => {
       const li = document.createElement('div');
       const input = document.createElement('input');
       input.type = 'radio';
       input.name = 'vote-answer';
       input.value = a.id;
+      input.dataset.authorId = a.author_id || '';
+      const isOwn = myUid && a.author_id === myUid;
+      if (disallowSelf && isOwn) {
+        input.disabled = true;
+        li.classList.add('muted');
+        input.title = 'Нельзя голосовать за свой ответ при 3+ вариантах';
+        if (state.selectedAnswerId === a.id) state.selectedAnswerId = null;
+      }
       input.checked = (a.id === prevSelected);
       input.addEventListener('change', () => { state.selectedAnswerId = a.id; });
       li.appendChild(input);
@@ -779,8 +1040,15 @@ export async function submitCustomQuestion() {
   if (!state.currentRoundId) return alert('Раунд не начат');
   const text = (el('custom-question')?.value || '').trim();
   if (!text) return alert('Введите вопрос');
+  // Устанавливаем дедлайн для answering после ввода автором
+  let qSecs = 60;
+  try {
+    const { data: cfg } = await supabase.from('rooms').select('question_seconds').eq('id', state.currentRoomId).single();
+    qSecs = Number(cfg?.question_seconds || 60) || 60;
+  } catch {}
+  const deadline = new Date(Date.now() + qSecs * 1000).toISOString();
   await supabase.from('rounds')
-    .update({ question_text: text, phase: 'answering' })
+    .update({ question_text: text, phase: 'answering', ended_at: deadline })
     .eq('id', state.currentRoundId);
   const inp = el('custom-question'); if (inp) inp.value = '';
   await refreshRoomState();
@@ -791,6 +1059,17 @@ export async function vote() {
   const checked = document.querySelector('input[name="vote-answer"]:checked');
   const ansId = checked ? checked.value : '';
   if (!ansId) return alert('Выберите ответ');
+  // Защита от самоголоса при 3+ ответах
+  try {
+    const inputs = Array.from(document.querySelectorAll('input[name="vote-answer"]'));
+    if (inputs.length >= 3) {
+      const myUid = state.currentUser?.id || null;
+      const authorId = checked?.dataset?.authorId || '';
+      if (myUid && authorId && myUid === authorId) {
+        return alert('При 3+ вариантах нельзя голосовать за свой ответ');
+      }
+    }
+  } catch {}
   const { error } = await supabase.from('votes').insert({
     round_id: state.currentRoundId, voter_id: state.currentUser.id, answer_id: ansId
   });
@@ -818,6 +1097,19 @@ export async function vote() {
 }
 
 export async function finalize() {
+  if (!state.currentRoundId && state.currentRoomId) {
+    try {
+      const { data } = await supabase
+        .from('rounds').select('id')
+        .eq('room_id', state.currentRoomId)
+        .is('finalized_at', null)
+        .in('phase', ['voting'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      state.currentRoundId = data?.id || null;
+    } catch {}
+  }
   if (!state.currentRoundId) return alert('Раунд не начат');
   const btn = el('finalize'); if (btn) btn.disabled = true;
   try {

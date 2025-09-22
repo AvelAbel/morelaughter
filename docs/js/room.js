@@ -108,11 +108,12 @@ export async function createRoom() {
   const user = await ensureUser();
   if (!state.nickname) throw new Error('Введите ник');
   const code = randomCode(4);
-  const initTarget = Number(document.getElementById('target-score')?.value || 10);
-  const initSecs = Number(document.getElementById('question-seconds')?.value || 60);
+  const initTarget = Math.min(99, Math.max(1, Number(document.getElementById('target-score')?.value || 10)));
+  const initSecs = Math.min(999, Math.max(1, Number(document.getElementById('question-seconds')?.value || 60)));
+  const initVoteSecs = Math.min(999, Math.max(1, Number(document.getElementById('vote-seconds')?.value || 45)));
   const initSrc = document.getElementById('qsrc-players')?.checked ? 'players' : 'preset';
   const { data: room, error } = await supabase
-    .from('rooms').insert({ code, owner_id: user.id, status: 'lobby', target_score: initTarget, question_seconds: initSecs, question_source: initSrc })
+    .from('rooms').insert({ code, owner_id: user.id, status: 'lobby', target_score: initTarget, question_seconds: initSecs, vote_seconds: initVoteSecs, question_source: initSrc })
     .select().single();
   if (error) throw new Error(error.message);
   state.currentRoomId = room.id;

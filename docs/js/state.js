@@ -21,6 +21,16 @@ export function showStep(n) {
   steps.forEach(s => s.classList.add('hidden'));
   if (n>=1 && n<=4) steps[n-1].classList.remove('hidden');
   
+  // Верхние кнопки навигации: показ по шагам
+  try {
+    const b1 = document.getElementById('back-1-top');
+    const b2 = document.getElementById('back-2-top');
+    const gsub = document.getElementById('game-subtitle');
+    if (b1) b1.classList.toggle('hidden', n !== 2);
+    if (b2) b2.classList.toggle('hidden', !(n === 3 || n === 4));
+    if (gsub) gsub.classList.toggle('hidden', !(n === 2 || n === 3 || n === 4));
+  } catch {}
+
   // Автоматически обновляем состояние комнаты при переходе в лобби
   if (n === 3 && state.currentRoomId) {
     // Импорт функции будет добавлен динамически
