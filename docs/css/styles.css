@@ -45,6 +45,10 @@ code { background:#f6f8fa; padding:2px 6px; border-radius:6px; }
 #lobby-title { margin: 4px 0; }
 #step-3 h4 { margin: 0; }
 
+/* Выравнивание заголовка "Игра" как у "Лобби" */
+#game-title-row { justify-content: center; margin-top: 8px; }
+#game-title { margin: 4px 0; }
+
 /* Фиксированная ширина полей в лобби (не зависят от контейнера/флекса) */
 #target-score, #question-seconds, #vote-seconds { width: 8ch; min-width: 8ch; flex: 0 0 auto; }
 
