@@ -90,14 +90,13 @@
 
 <!-- Шаг 4. Раунд -->
   <section class="card hidden" id="step-4">
-    <h3>Игра</h3>
-    <div class="row">
-      <strong>Код комнаты:</strong>
-      <code id="room-code-2">—</code>
+    <div class="row" id="game-title-row">
+      <h3 id="game-title">Игра (<code id="room-code-2">—</code>)</h3>
     </div>
-    <div class="row">
+    <div class="row" id="phase-row">
       <strong>Фаза:</strong>
-      <code id="phase-code-2">—</code>
+      <span id="phase-label"></span>
+      <code id="phase-code-2" class="muted" style="margin-left:8px"></code>
     </div>
     <!-- Режим: Вопросы от игроков (фаза придумывания) -->
     <div class="row hidden" id="compose-row-message">
@@ -138,9 +137,6 @@
     <ul id="players-list-round"></ul>
     <div id="room-state" class="muted"></div>
     <div id="round-state" class="muted"></div>
-    <div class="row hidden" id="wait-next-row">
-      <div class="muted">Ждём, когда <strong id="host-nick-next">хост</strong> начнёт следующий раунд<span id="wait-next-dots"></span></div>
-    </div>
   </section>
 
   <script type="module" src="js/main.js"></script>
