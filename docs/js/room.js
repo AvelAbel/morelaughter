@@ -111,7 +111,8 @@ export async function createRoom() {
   const initTarget = Math.min(99, Math.max(1, Number(document.getElementById('target-score')?.value || 10)));
   const initSecs = Math.min(999, Math.max(1, Number(document.getElementById('question-seconds')?.value || 60)));
   const initVoteSecs = Math.min(999, Math.max(1, Number(document.getElementById('vote-seconds')?.value || 45)));
-  const initSrc = document.getElementById('qsrc-players')?.checked ? 'players' : 'preset';
+  const sel = document.getElementById('qsrc-select');
+  const initSrc = (sel && (sel.value === 'players' || sel.value === 'preset')) ? sel.value : 'preset';
   const { data: room, error } = await supabase
     .from('rooms').insert({ code, owner_id: user.id, status: 'lobby', target_score: initTarget, question_seconds: initSecs, vote_seconds: initVoteSecs, question_source: initSrc })
     .select().single();

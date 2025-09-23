@@ -122,17 +122,14 @@ if (btnStartGame) btnStartGame.onclick = async () => {
     const vsInput = el('vote-seconds');
     const vsecsRaw = parseInt((vsInput && vsInput.value) || '45', 10) || 45;
     const vsecs = Math.min(999, Math.max(1, vsecsRaw));
-    const src = (document.getElementById('qsrc-players')?.checked) ? 'players' : 'preset';
+    const srcSel = document.getElementById('qsrc-select');
+    const src = (srcSel && (srcSel.value === 'players' || srcSel.value === 'preset')) ? srcSel.value : 'preset';
     await supabase.from('rooms').update({ target_score: target, question_seconds: secs, vote_seconds: vsecs, question_source: src }).eq('id', state.currentRoomId);
     if (targetScoreInput) { targetScoreInput.dataset.dirty=''; targetScoreInput.value=String(target); }
     if (qsInput) { qsInput.dataset.dirty=''; qsInput.value = String(secs); }
     if (vsInput) { vsInput.dataset.dirty=''; vsInput.value = String(vsecs); }
-    const rbPreset  = document.getElementById('qsrc-preset');
-    const rbPlayers = document.getElementById('qsrc-players');
-    if (rbPreset && rbPlayers) {
-      rbPreset.dataset.dirty=''; rbPlayers.dataset.dirty='';
-      rbPreset.checked = (src === 'preset'); rbPlayers.checked = (src === 'players');
-    }
+    const srcSelect = document.getElementById('qsrc-select');
+    if (srcSelect) { srcSelect.dataset.dirty=''; srcSelect.value = src; }
   } catch (e) { console.error('Save settings before start failed:', e); }
   // Затем стартуем игру
   await startGameFromLobby();

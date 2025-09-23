@@ -182,6 +182,28 @@ export async function refreshRoomState() {
     // Скрываем строку "Players:", чтобы не дублировать "Игроки:"
     roomStateEl.innerHTML = '';
   }
+  // Лобби: показать ожидание старта всем, кроме хоста
+  try {
+    const waitRow = document.getElementById('lobby-wait-row');
+    const dots = document.getElementById('lobby-wait-dots');
+    const hostNickEl = document.getElementById('host-nick-wait');
+    if (waitRow) {
+      const showWait = isLobby && !amIHost;
+      waitRow.classList.toggle('hidden', !showWait);
+      if (showWait && hostNickEl) {
+        const hostPlayer = (players || []).find(p => p.is_host);
+        hostNickEl.textContent = hostPlayer?.nickname || 'хост';
+      }
+      if (showWait && dots && !state._waitDotsTimer) {
+        let n = 0;
+        const render = () => { n = (n + 1) % 4; dots.textContent = '.'.repeat(n); };
+        render();
+        state._waitDotsTimer = setInterval(render, 500);
+      } else if ((!showWait || !dots) && state._waitDotsTimer) {
+        clearInterval(state._waitDotsTimer); state._waitDotsTimer = null; if (dots) dots.textContent = '';
+      }
+    }
+  } catch {}
 
   // Обновляем код фазы
   const phaseCode2 = el('phase-code-2');
@@ -255,26 +277,17 @@ export async function refreshRoomState() {
 
   // Подставляем источник вопросов
   try {
-    const rbPreset = document.getElementById('qsrc-preset');
-    const rbPlayers = document.getElementById('qsrc-players');
+    const srcSelect = document.getElementById('qsrc-select');
     const rowQS = document.getElementById('row-question-seconds');
-    if (rbPreset && !rbPreset.dataset._init) {
+    if (srcSelect && !srcSelect.dataset._init) {
       ['change','input','click'].forEach(ev =>
-        rbPreset.addEventListener(ev, () => { rbPreset.dataset.dirty='1'; if (rbPlayers) rbPlayers.dataset.dirty='1'; /* question-seconds виден всегда */ })
+        srcSelect.addEventListener(ev, () => { srcSelect.dataset.dirty='1'; /* question-seconds виден всегда */ })
       );
-      rbPreset.dataset._init = '1';
+      srcSelect.dataset._init = '1';
     }
-    if (rbPlayers && !rbPlayers.dataset._init) {
-      ['change','input','click'].forEach(ev =>
-        rbPlayers.addEventListener(ev, () => { if (rbPreset) rbPreset.dataset.dirty='1'; rbPlayers.dataset.dirty='1'; /* question-seconds виден всегда */ })
-      );
-      rbPlayers.dataset._init = '1';
-    }
-
-    const isDirty = (rbPreset?.dataset.dirty === '1' || rbPlayers?.dataset.dirty === '1');
-    if (roomInfo?.question_source && rbPreset && rbPlayers && !isDirty && document.activeElement?.name !== 'qsrc') {
-      rbPreset.checked  = roomInfo.question_source === 'preset';
-      rbPlayers.checked = roomInfo.question_source === 'players';
+    const isDirty = (srcSelect?.dataset.dirty === '1');
+    if (roomInfo?.question_source && srcSelect && !isDirty) {
+      srcSelect.value = roomInfo.question_source === 'players' ? 'players' : 'preset';
       if (rowQS) rowQS.classList.remove('hidden');
     }
   } catch {}
@@ -572,7 +585,51 @@ export async function refreshRoomState() {
       if (nextBtn) nextBtn.classList.toggle('hidden', !state.isHost);
       if (endBtn) endBtn.classList.add('hidden');
     }
+    // Показ ожидания следующего раунда для игроков (не хостов) только в results и если нет финального победителя
+    try {
+      const nextRow = document.getElementById('wait-next-row');
+      const nextDots = document.getElementById('wait-next-dots');
+      const hostNickEl2 = document.getElementById('host-nick-next');
+      // Проверка победителя (тот же расчёт, что ниже, но локально и безопасно)
+      let hasWinner = false;
+      try {
+        const { data: rp } = await supabase
+          .from('room_players')
+          .select('player_id, nickname, score, is_host')
+          .eq('room_id', state.currentRoomId)
+          .order('score', { ascending: false });
+        const targetScore = Number(roomInfo?.target_score || 0);
+        if (targetScore > 0 && (rp || []).length) {
+          const maxScore = Math.max(...(rp || []).map(r => Number(r.score || 0)));
+          hasWinner = maxScore >= targetScore;
+        }
+      } catch {}
+      const showWaitNext = (!amIHost) && !hasWinner;
+      if (nextRow) {
+        nextRow.classList.toggle('hidden', !showWaitNext);
+        if (showWaitNext && hostNickEl2) {
+          const hostPlayer = (players || []).find(p => p.is_host);
+          hostNickEl2.textContent = hostPlayer?.nickname || 'хост';
+        }
+        if (showWaitNext && nextDots && !state._waitNextDotsTimer) {
+          let n2 = 0;
+          const render2 = () => { n2 = (n2 + 1) % 4; nextDots.textContent = '.'.repeat(n2); };
+          render2();
+          state._waitNextDotsTimer = setInterval(render2, 500);
+        } else if ((!showWaitNext || !nextDots) && state._waitNextDotsTimer) {
+          clearInterval(state._waitNextDotsTimer); state._waitNextDotsTimer = null; if (nextDots) nextDots.textContent = '';
+        }
+      }
+    } catch {}
   } else {
+    // Скрыть ожидание следующего раунда во всех прочих фазах
+    try {
+      const nextRow = document.getElementById('wait-next-row');
+      const nextDots = document.getElementById('wait-next-dots');
+      if (nextRow) nextRow.classList.add('hidden');
+      if (state._waitNextDotsTimer) { clearInterval(state._waitNextDotsTimer); state._waitNextDotsTimer = null; }
+      if (nextDots) nextDots.textContent = '';
+    } catch {}
     // В других фазах очищаем и скрываем варианты, показ ввода зависит от myAnswered
     const container = el('answers-list');
     if (container) { container.innerHTML = ''; container.classList.add('hidden'); }
