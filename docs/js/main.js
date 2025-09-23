@@ -92,10 +92,42 @@ document.querySelectorAll('#back-2').forEach((btn) => {
 // Шаг 2
 const btnCreateRoom = el('create-room');
 if (btnCreateRoom) btnCreateRoom.onclick = async () => {
+  // Блокируем кнопку и запускаем анимацию многоточия
+  let dotsTimer = null;
+  const originalHTML = btnCreateRoom.innerHTML;
+  // Зафиксируем текущую ширину, чтобы кнопка не "скакала" во время анимации
+  const rect = btnCreateRoom.getBoundingClientRect();
+  const fixedWidth = Math.ceil(rect.width);
   try {
+    btnCreateRoom.disabled = true;
+    btnCreateRoom.classList.add('muted');
+    btnCreateRoom.style.width = fixedWidth + 'px';
+    // Строим стабильную разметку: базовый текст + фиксированный контейнер под точки (3ch)
+    btnCreateRoom.innerHTML = '';
+    const baseSpan = document.createElement('span');
+    baseSpan.textContent = 'Создаем';
+    const dotsSpan = document.createElement('span');
+    dotsSpan.style.display = 'inline-block';
+    dotsSpan.style.width = '3ch';
+    dotsSpan.style.textAlign = 'left';
+    dotsSpan.style.verticalAlign = 'baseline';
+    btnCreateRoom.appendChild(baseSpan);
+    btnCreateRoom.appendChild(dotsSpan);
+    let n = 0;
+    const renderDots = () => { n = (n + 1) % 4; dotsSpan.textContent = '.'.repeat(n); };
+    renderDots();
+    dotsTimer = setInterval(renderDots, 500);
     await createRoom();
     await refreshRoomState();
-  } catch (e) { alert(e.message || e); }
+  } catch (e) {
+    alert(e.message || e);
+  } finally {
+    if (dotsTimer) { clearInterval(dotsTimer); dotsTimer = null; }
+    btnCreateRoom.innerHTML = originalHTML;
+    btnCreateRoom.classList.remove('muted');
+    btnCreateRoom.disabled = false;
+    btnCreateRoom.style.width = '';
+  }
 };
 
 const joinBtn = el('join-room');
@@ -111,28 +143,83 @@ if (btnCopyCodeLobby) btnCopyCodeLobby.onclick = () => state.currentRoomCode && 
 // Шаг 3 → 4
 const btnStartGame = el('start-game');
 if (btnStartGame) btnStartGame.onclick = async () => {
+  let dotsTimer = null;
+  const originalHTML = btnStartGame.innerHTML;
+  const rect = btnStartGame.getBoundingClientRect();
+  // Вычислим требуемую ширину для текста "Начинаем..." и возьмём максимум
+  let fixedWidth = Math.ceil(rect.width);
   try {
+    const cs = window.getComputedStyle(btnStartGame);
+    const padLeft = parseFloat(cs.paddingLeft) || 0;
+    const padRight = parseFloat(cs.paddingRight) || 0;
+    const brdLeft = parseFloat(cs.borderLeftWidth) || 0;
+    const brdRight = parseFloat(cs.borderRightWidth) || 0;
+    const measure = document.createElement('span');
+    measure.style.position = 'absolute';
+    measure.style.visibility = 'hidden';
+    measure.style.whiteSpace = 'nowrap';
+    measure.style.font = cs.font;
+    measure.textContent = 'Начинаем...';
+    document.body.appendChild(measure);
+    const textW = measure.getBoundingClientRect().width;
+    document.body.removeChild(measure);
+    const needW = Math.ceil(textW + padLeft + padRight + brdLeft + brdRight);
+    fixedWidth = Math.max(fixedWidth, needW);
+  } catch {}
+  try {
+    btnStartGame.disabled = true;
+    btnStartGame.classList.add('muted');
+    // Не допускаем переносов строки при анимации
+    btnStartGame.style.whiteSpace = 'nowrap';
+    btnStartGame.style.width = fixedWidth + 'px';
+    // Стабильная разметка для анимации "Начинаем..."
+    btnStartGame.innerHTML = '';
+    const baseSpan = document.createElement('span');
+    baseSpan.textContent = 'Начинаем';
+    const dotsSpan = document.createElement('span');
+    dotsSpan.style.display = 'inline-block';
+    dotsSpan.style.width = '3ch';
+    dotsSpan.style.textAlign = 'left';
+    dotsSpan.style.verticalAlign = 'baseline';
+    btnStartGame.appendChild(baseSpan);
+    btnStartGame.appendChild(dotsSpan);
+    let n = 0;
+    const renderDots = () => { n = (n + 1) % 4; dotsSpan.textContent = '.'.repeat(n); };
+    renderDots();
+    dotsTimer = setInterval(renderDots, 500);
+
     // Сначала сохраняем настройки
-    const targetScoreInput = el('target-score');
-    const targetRaw = parseInt((targetScoreInput && targetScoreInput.value) || '0', 10) || 0;
-    const target = Math.min(99, Math.max(1, targetRaw));
-    const qsInput = el('question-seconds');
-    const secsRaw = parseInt((qsInput && qsInput.value) || '60', 10) || 60;
-    const secs = Math.min(999, Math.max(1, secsRaw));
-    const vsInput = el('vote-seconds');
-    const vsecsRaw = parseInt((vsInput && vsInput.value) || '45', 10) || 45;
-    const vsecs = Math.min(999, Math.max(1, vsecsRaw));
-    const srcSel = document.getElementById('qsrc-select');
-    const src = (srcSel && (srcSel.value === 'players' || srcSel.value === 'preset')) ? srcSel.value : 'preset';
-    await supabase.from('rooms').update({ target_score: target, question_seconds: secs, vote_seconds: vsecs, question_source: src }).eq('id', state.currentRoomId);
-    if (targetScoreInput) { targetScoreInput.dataset.dirty=''; targetScoreInput.value=String(target); }
-    if (qsInput) { qsInput.dataset.dirty=''; qsInput.value = String(secs); }
-    if (vsInput) { vsInput.dataset.dirty=''; vsInput.value = String(vsecs); }
-    const srcSelect = document.getElementById('qsrc-select');
-    if (srcSelect) { srcSelect.dataset.dirty=''; srcSelect.value = src; }
-  } catch (e) { console.error('Save settings before start failed:', e); }
-  // Затем стартуем игру
-  await startGameFromLobby();
+    try {
+      const targetScoreInput = el('target-score');
+      const targetRaw = parseInt((targetScoreInput && targetScoreInput.value) || '0', 10) || 0;
+      const target = Math.min(99, Math.max(1, targetRaw));
+      const qsInput = el('question-seconds');
+      const secsRaw = parseInt((qsInput && qsInput.value) || '60', 10) || 60;
+      const secs = Math.min(999, Math.max(1, secsRaw));
+      const vsInput = el('vote-seconds');
+      const vsecsRaw = parseInt((vsInput && vsInput.value) || '45', 10) || 45;
+      const vsecs = Math.min(999, Math.max(1, vsecsRaw));
+      const srcSel = document.getElementById('qsrc-select');
+      const src = (srcSel && (srcSel.value === 'players' || srcSel.value === 'preset')) ? srcSel.value : 'preset';
+      await supabase.from('rooms').update({ target_score: target, question_seconds: secs, vote_seconds: vsecs, question_source: src }).eq('id', state.currentRoomId);
+      if (targetScoreInput) { targetScoreInput.dataset.dirty=''; targetScoreInput.value=String(target); }
+      if (qsInput) { qsInput.dataset.dirty=''; qsInput.value = String(secs); }
+      if (vsInput) { vsInput.dataset.dirty=''; vsInput.value = String(vsecs); }
+      const srcSelect = document.getElementById('qsrc-select');
+      if (srcSelect) { srcSelect.dataset.dirty=''; srcSelect.value = src; }
+    } catch (e) { console.error('Save settings before start failed:', e); }
+    // Затем стартуем игру
+    await startGameFromLobby();
+  } catch (e) {
+    alert(e?.message || e);
+  } finally {
+    if (dotsTimer) { clearInterval(dotsTimer); dotsTimer = null; }
+    btnStartGame.innerHTML = originalHTML;
+    btnStartGame.classList.remove('muted');
+    btnStartGame.disabled = false;
+    btnStartGame.style.width = '';
+    btnStartGame.style.whiteSpace = '';
+  }
 };
 
 // Шаг 4 (Раунд)

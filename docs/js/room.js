@@ -181,7 +181,53 @@ export async function createRoom() {
 
 export async function joinByCode(codeRaw, statusEl, buttonEl) {
   if (buttonEl) buttonEl.disabled = true;
-  if (statusEl) statusEl.textContent = 'Подключаем…';
+  if (statusEl) statusEl.textContent = '';
+  // Анимируем саму кнопку
+  let dotsTimer = null;
+  let originalHTML = '';
+  let fixedWidth = 0;
+  try {
+    if (buttonEl) {
+      originalHTML = buttonEl.innerHTML;
+      const rect = buttonEl.getBoundingClientRect();
+      fixedWidth = Math.ceil(rect.width);
+      const cs = window.getComputedStyle(buttonEl);
+      try {
+        const padLeft = parseFloat(cs.paddingLeft) || 0;
+        const padRight = parseFloat(cs.paddingRight) || 0;
+        const brdLeft = parseFloat(cs.borderLeftWidth) || 0;
+        const brdRight = parseFloat(cs.borderRightWidth) || 0;
+        const measure = document.createElement('span');
+        measure.style.position = 'absolute';
+        measure.style.visibility = 'hidden';
+        measure.style.whiteSpace = 'nowrap';
+        measure.style.font = cs.font;
+        measure.textContent = 'Подключаем...';
+        document.body.appendChild(measure);
+        const textW = measure.getBoundingClientRect().width;
+        document.body.removeChild(measure);
+        const needW = Math.ceil(textW + padLeft + padRight + brdLeft + brdRight);
+        fixedWidth = Math.max(fixedWidth, needW);
+      } catch {}
+      buttonEl.classList.add('muted');
+      buttonEl.style.whiteSpace = 'nowrap';
+      buttonEl.style.width = fixedWidth + 'px';
+      buttonEl.innerHTML = '';
+      const baseSpan = document.createElement('span');
+      baseSpan.textContent = 'Подключаем';
+      const dotsSpan = document.createElement('span');
+      dotsSpan.style.display = 'inline-block';
+      dotsSpan.style.width = '3ch';
+      dotsSpan.style.textAlign = 'left';
+      dotsSpan.style.verticalAlign = 'baseline';
+      buttonEl.appendChild(baseSpan);
+      buttonEl.appendChild(dotsSpan);
+      let n = 0;
+      const renderDots = () => { n = (n + 1) % 4; dotsSpan.textContent = '.'.repeat(n); };
+      renderDots();
+      dotsTimer = setInterval(renderDots, 500);
+    }
+  } catch {}
   try {
     const user = await ensureUser();
     const code = (codeRaw || '').trim().toUpperCase();
@@ -227,7 +273,7 @@ export async function joinByCode(codeRaw, statusEl, buttonEl) {
   try { await setActiveStatus(true); } catch {}
     updateInviteUI();
     showStep(3);
-    if (statusEl) statusEl.textContent = 'Готово';
+    if (statusEl) statusEl.textContent = '';
     await refreshRoomState();
     // Подписка на изменения в комнате
     subscribeToRoomRealtime(state.currentRoomId);
@@ -241,7 +287,14 @@ export async function joinByCode(codeRaw, statusEl, buttonEl) {
     if (statusEl) statusEl.textContent = e.message || 'Ошибка';
     else alert(e.message || e);
   } finally {
-    if (buttonEl) buttonEl.disabled = false;
+    if (dotsTimer) { try { clearInterval(dotsTimer); } catch {} dotsTimer = null; }
+    if (buttonEl) {
+      buttonEl.classList.remove('muted');
+      buttonEl.style.whiteSpace = '';
+      buttonEl.style.width = '';
+      buttonEl.innerHTML = originalHTML || 'Присоединиться';
+      buttonEl.disabled = false;
+    }
   }
 }
 

@@ -5,6 +5,7 @@ let answersSub = null;
 let roundsSub = null;
 let roomsSub = null;
 let votesSub = null;
+let playersSub = null;
 
 // Детеминированная случайная перестановка по seed (одинаковая для всех в раунде)
 function seed32(s){ let h = 2166136261; for (const c of String(s||'')) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
@@ -65,6 +66,7 @@ async function resubscribeVotesRealtime() {
 async function resubscribeRoomRealtime() {
   // Подписка на старт раунда (INSERT в rounds текущей комнаты)
   if (roundsSub) { try { await supabase.removeChannel(roundsSub); } catch {} }
+  if (playersSub) { try { await supabase.removeChannel(playersSub); } catch {} }
   if (!state.currentRoomId) return;
   roundsSub = supabase
     .channel(`rounds-room-${state.currentRoomId}`)
@@ -100,6 +102,17 @@ async function resubscribeRoomRealtime() {
       }
     })
     .subscribe();
+
+  // Подписка на обновления очков игроков
+  playersSub = supabase
+    .channel(`room-players-${state.currentRoomId}`)
+    .on('postgres_changes', {
+      event: 'UPDATE', schema: 'public', table: 'room_players',
+      filter: `room_id=eq.${state.currentRoomId}`
+    }, () => {
+      refreshRoomState();
+    })
+    .subscribe();
 }
 
 export function cleanupSubscriptions() {
@@ -107,6 +120,7 @@ export function cleanupSubscriptions() {
   try { if (votesSub)   { supabase.removeChannel(votesSub);   votesSub   = null; } } catch {}
   try { if (roundsSub)  { supabase.removeChannel(roundsSub);  roundsSub  = null; } } catch {}
   try { if (roomsSub)   { supabase.removeChannel(roomsSub);   roomsSub   = null; } } catch {}
+  try { if (playersSub) { supabase.removeChannel(playersSub); playersSub = null; } } catch {}
 }
 
 export async function refreshRoomState() {
@@ -205,9 +219,21 @@ export async function refreshRoomState() {
     }
   } catch {}
 
-  // Обновляем код фазы
+  // Обновляем код/лейбл фазы
   const phaseCode2 = el('phase-code-2');
-  if (phaseCode2) phaseCode2.textContent = latest ? latest.phase : '—';
+  const phaseLabel = document.getElementById('phase-label');
+  const phaseName = latest ? latest.phase : null;
+  if (phaseCode2) phaseCode2.textContent = '';
+  if (phaseLabel) {
+    // Человекочитаемые подписи. Для answering/voting/results рендерим ниже специализировано, чтобы не мигало
+    if (phaseName === 'answering' || phaseName === 'voting' || phaseName === 'results') {
+      // Ничего здесь не перерисовываем — предотвратить перезапись и мигание
+    } else {
+      let labelText = '—';
+      if (phaseName === 'composing') labelText = 'Придумывание вопроса.';
+      phaseLabel.innerHTML = labelText;
+    }
+  }
 
   // Подставляем текущее значение порога очков в лобби
   try {
@@ -302,7 +328,7 @@ export async function refreshRoomState() {
   // reset compose UI (answering timer не скрываем, если сейчас answering)
   if (composeRowMsg) composeRowMsg.classList.add('hidden');
   if (composeRowInput) composeRowInput.classList.add('hidden');
-  if (answeringRow && (latest?.phase !== 'answering')) answeringRow.classList.add('hidden');
+  if (answeringRow) answeringRow.classList.add('hidden');
 
   // Обновляем текст вопроса над полем ответа
   const qText = el('question-text');
@@ -326,13 +352,19 @@ export async function refreshRoomState() {
     // Переподписка на ответы/голоса для надёжности, если roundId уже известен
     try { if (state.currentRoundId) { resubscribeAnswersRealtime(); resubscribeVotesRealtime(); } } catch {}
 
-    // Таймер answering по rounds.ended_at
+    // Таймер answering по rounds.ended_at — показываем прямо в phase-label
     const deadlineMsAns = latest?.ended_at ? Date.parse(latest.ended_at) : 0;
     if (deadlineMsAns > 0) {
-      if (answeringRow) answeringRow.classList.remove('hidden');
+      if (answeringRow) answeringRow.classList.add('hidden');
+      const phaseLabelElAns = document.getElementById('phase-label');
+      // Стабильная разметка для answering
+      if (phaseLabelElAns && !phaseLabelElAns.querySelector('#phase-ans-left')) {
+        phaseLabelElAns.innerHTML = 'Ответы игроков, осталось: <span id="phase-ans-left"></span>';
+      }
       const renderAnsTimer = () => {
         const left = Math.max(0, Math.ceil((deadlineMsAns - Date.now())/1000));
-        if (answeringTimer) answeringTimer.textContent = String(left).padStart(2,'0');
+        const leftEl = document.getElementById('phase-ans-left');
+        if (leftEl) leftEl.textContent = String(left).padStart(2,'0');
         return left;
       };
       renderAnsTimer();
@@ -442,14 +474,19 @@ export async function refreshRoomState() {
         }
       } catch {}
     }
-    // Показ таймера голосования
+    // Таймер голосования: убираем нижнюю строку и показываем внутри phase-label
     const votingRow = document.getElementById('voting-row-message');
-    const votingTimer = document.getElementById('voting-timer');
-    if (votingRow) votingRow.classList.remove('hidden');
+    if (votingRow) votingRow.classList.add('hidden');
+    const phaseLabelElVoting = document.getElementById('phase-label');
+    // Инициализируем стабильную разметку внутри phase-label один раз
+    if (phaseLabelElVoting && !phaseLabelElVoting.querySelector('#phase-vote-left')) {
+      phaseLabelElVoting.innerHTML = 'Голосование, осталось: <span id="phase-vote-left"></span>';
+    }
     const deadlineMsVoting = latest?.ended_at ? Date.parse(latest.ended_at) : 0;
     const renderVotingTimer = () => {
       const left = Math.max(0, Math.ceil((deadlineMsVoting - Date.now())/1000));
-      if (votingTimer) votingTimer.textContent = String(left).padStart(2,'0');
+      const leftEl = document.getElementById('phase-vote-left');
+      if (leftEl) leftEl.textContent = String(left).padStart(2,'0');
       return left;
     };
     if (deadlineMsVoting > 0) {
@@ -487,8 +524,13 @@ export async function refreshRoomState() {
     if (answersContainer) answersContainer.classList.remove('hidden');
     const voteBtn = el('vote');
     if (voteBtn) {
-      voteBtn.classList.toggle('hidden', !!state.myVoted);
-      voteBtn.disabled = !!state.myVoted;
+      const shouldHide = !!state.myVoted;
+      voteBtn.classList.toggle('hidden', shouldHide);
+      voteBtn.disabled = shouldHide;
+      if (!shouldHide) {
+        // На входе в голосование у активной кнопки убираем серый стиль с прошлого раунда
+        voteBtn.classList.remove('muted');
+      }
     }
     // Скрыть ввод ответа во время голосования
     const answerInput = el('answer-text'); if (answerInput) answerInput.classList.add('hidden');
@@ -585,39 +627,26 @@ export async function refreshRoomState() {
       if (nextBtn) nextBtn.classList.toggle('hidden', !state.isHost);
       if (endBtn) endBtn.classList.add('hidden');
     }
-    // Показ ожидания следующего раунда для игроков (не хостов) только в results и если нет финального победителя
+    // Вставка ожидания прямо в лейбл фазы (в одну строку) для не-хоста, если победителя ещё нет
     try {
-      const nextRow = document.getElementById('wait-next-row');
-      const nextDots = document.getElementById('wait-next-dots');
-      const hostNickEl2 = document.getElementById('host-nick-next');
-      // Проверка победителя (тот же расчёт, что ниже, но локально и безопасно)
-      let hasWinner = false;
-      try {
-        const { data: rp } = await supabase
-          .from('room_players')
-          .select('player_id, nickname, score, is_host')
-          .eq('room_id', state.currentRoomId)
-          .order('score', { ascending: false });
-        const targetScore = Number(roomInfo?.target_score || 0);
-        if (targetScore > 0 && (rp || []).length) {
-          const maxScore = Math.max(...(rp || []).map(r => Number(r.score || 0)));
-          hasWinner = maxScore >= targetScore;
-        }
-      } catch {}
-      const showWaitNext = (!amIHost) && !hasWinner;
-      if (nextRow) {
-        nextRow.classList.toggle('hidden', !showWaitNext);
-        if (showWaitNext && hostNickEl2) {
+      const phaseLabelEl = document.getElementById('phase-label');
+      if (phaseLabelEl) {
+        const haveWinner = !!winner;
+        if (!amIHost && !haveWinner) {
           const hostPlayer = (players || []).find(p => p.is_host);
-          hostNickEl2.textContent = hostPlayer?.nickname || 'хост';
-        }
-        if (showWaitNext && nextDots && !state._waitNextDotsTimer) {
-          let n2 = 0;
-          const render2 = () => { n2 = (n2 + 1) % 4; nextDots.textContent = '.'.repeat(n2); };
-          render2();
-          state._waitNextDotsTimer = setInterval(render2, 500);
-        } else if ((!showWaitNext || !nextDots) && state._waitNextDotsTimer) {
-          clearInterval(state._waitNextDotsTimer); state._waitNextDotsTimer = null; if (nextDots) nextDots.textContent = '';
+          const hostName = hostPlayer?.nickname || 'хост';
+          phaseLabelEl.innerHTML = `<span class=\"muted\">Результат голосования. Ждём, когда <strong id=\"host-nick-next\">${hostName}</strong> начнёт следующий раунд<span id=\"wait-next-dots\"></span></span>`;
+          const nextDots = document.getElementById('wait-next-dots');
+          if (state._waitNextDotsTimer) { try { clearInterval(state._waitNextDotsTimer); } catch {} state._waitNextDotsTimer = null; }
+          if (nextDots) {
+            let n2 = 0;
+            const render2 = () => { n2 = (n2 + 1) % 4; nextDots.textContent = '.'.repeat(n2); };
+            render2();
+            state._waitNextDotsTimer = setInterval(render2, 500);
+          }
+        } else {
+          phaseLabelEl.textContent = 'Результат голосования.';
+          if (state._waitNextDotsTimer) { clearInterval(state._waitNextDotsTimer); state._waitNextDotsTimer = null; }
         }
       }
     } catch {}
@@ -634,7 +663,7 @@ export async function refreshRoomState() {
     const container = el('answers-list');
     if (container) { container.innerHTML = ''; container.classList.add('hidden'); }
     const voteBtn = el('vote');
-    if (voteBtn) { voteBtn.classList.add('hidden'); voteBtn.disabled = true; }
+    if (voteBtn) { voteBtn.classList.add('hidden'); voteBtn.disabled = true; voteBtn.classList.remove('muted'); }
     // В других фазах скрываем кнопку следующего раунда
     const nextBtnOther = el('next-round'); if (nextBtnOther) nextBtnOther.classList.add('hidden');
     const answerInput = el('answer-text');
@@ -643,8 +672,6 @@ export async function refreshRoomState() {
     if (state.currentPhase !== 'answering') {
       try { if (state._answeringTimerId) clearInterval(state._answeringTimerId); } catch {}
       if (answeringRow) answeringRow.classList.add('hidden');
-    } else {
-      if (answeringRow) answeringRow.classList.remove('hidden');
     }
     if (state.currentPhase === 'answering') {
       // Показываем поле всем, кто ещё не отправил ответ; если уже отправил — скрыто
@@ -837,7 +864,7 @@ export async function refreshRoomState() {
     }
   } catch (e) { console.error('Auto startVoting failed:', e); }
 
-  // --- Авто-финализация: если проголосовали все АВТОРЫ ответов (единая политика) ---
+  // --- Авто-финализация: если проголосовали все ИГРОКИ (или, как минимум, все авторы ответов) ---
   try {
     if (latest?.phase === 'voting' && state.currentRoundId) {
       const [{ data: votes }, { data: ans }] = await Promise.all([
@@ -847,7 +874,9 @@ export async function refreshRoomState() {
       const voters = new Set((votes || []).map(v => v.voter_id));
       const participants = new Set((ans || []).map(a => a.author_id));
       const allAuthorsVoted = participants.size > 0 && Array.from(participants).every(id => voters.has(id));
-      if (allAuthorsVoted && amIHost && !state.finalizing) {
+      const roomPlayerIds = (players || []).map(p => p.player_id);
+      const allPlayersVoted = roomPlayerIds.length > 0 && roomPlayerIds.every(id => voters.has(id));
+      if ((allPlayersVoted || allAuthorsVoted) && amIHost && !state.finalizing) {
         state.finalizing = true;
         try { await finalize(); } finally { state.finalizing = false; }
       }
@@ -893,6 +922,43 @@ export async function refreshRoomState() {
       lobbyAdmin.classList.add('hidden');
       console.log('Hiding admin panel - user is not host');
     }
+    // В results для не-хостов добавляем под "Фаза:" ожидание следующего раунда, если победитель не определён
+    try {
+      const phaseRow = document.getElementById('phase-row');
+      const hostNickEl2 = document.getElementById('host-nick-next') || document.createElement('strong');
+      const nextDotsId = 'wait-next-dots';
+      const haveWinner = !!winner;
+      const shouldShowWait = (!amIHost) && !haveWinner;
+      // Создаём/находим контейнер ожидания рядом с фазой
+      let waitInline = document.getElementById('wait-inline');
+      if (!waitInline && phaseRow) {
+        waitInline = document.createElement('div');
+        waitInline.id = 'wait-inline';
+        waitInline.className = 'muted';
+        waitInline.style.display = 'block';
+        waitInline.style.margin = '4px 0 0 0';
+        waitInline.style.flexBasis = '100%';
+        waitInline.style.width = '100%';
+        phaseRow.appendChild(waitInline);
+      }
+      if (waitInline) {
+        if (shouldShowWait) {
+          const hostPlayer = (players || []).find(p => p.is_host);
+          const hostName = hostPlayer?.nickname || 'хост';
+          waitInline.innerHTML = `Ждём, когда <strong id="host-nick-next">${hostName}</strong> начнёт следующий раунд<span id="${nextDotsId}"></span>`;
+          const nextDots = document.getElementById(nextDotsId);
+          if (nextDots && !state._waitNextDotsTimer) {
+            let n2 = 0;
+            const render2 = () => { n2 = (n2 + 1) % 4; nextDots.textContent = '.'.repeat(n2); };
+            render2();
+            state._waitNextDotsTimer = setInterval(render2, 500);
+          }
+        } else {
+          waitInline.innerHTML = '';
+          if (state._waitNextDotsTimer) { clearInterval(state._waitNextDotsTimer); state._waitNextDotsTimer = null; }
+        }
+      }
+    } catch {}
   } else {
     console.log('Cannot check host status:', { 
       hasLobbyAdmin: !!lobbyAdmin, 
@@ -1113,9 +1179,11 @@ export async function submitCustomQuestion() {
 
 export async function vote() {
   if (!state.currentRoundId) return alert('Раунд не начат');
+  const voteBtnLock = el('vote');
+  if (voteBtnLock) { voteBtnLock.disabled = true; voteBtnLock.classList.add('muted'); }
   const checked = document.querySelector('input[name="vote-answer"]:checked');
   const ansId = checked ? checked.value : '';
-  if (!ansId) return alert('Выберите ответ');
+  if (!ansId) { if (voteBtnLock) { voteBtnLock.disabled = false; voteBtnLock.classList.remove('muted'); } return alert('Выберите ответ'); }
   // Защита от самоголоса при 3+ ответах
   try {
     const inputs = Array.from(document.querySelectorAll('input[name="vote-answer"]'));
@@ -1123,6 +1191,7 @@ export async function vote() {
       const myUid = state.currentUser?.id || null;
       const authorId = checked?.dataset?.authorId || '';
       if (myUid && authorId && myUid === authorId) {
+        if (voteBtnLock) { voteBtnLock.disabled = false; voteBtnLock.classList.remove('muted'); }
         return alert('При 3+ вариантах нельзя голосовать за свой ответ');
       }
     }
@@ -1130,7 +1199,7 @@ export async function vote() {
   const { error } = await supabase.from('votes').insert({
     round_id: state.currentRoundId, voter_id: state.currentUser.id, answer_id: ansId
   });
-  if (error) return alert(error.message);
+  if (error) { if (voteBtnLock) { voteBtnLock.disabled = false; voteBtnLock.classList.remove('muted'); } return alert(error.message); }
   const rs = el('round-state'); if (rs) rs.textContent = 'Голос учтён.';
   // Локально помечаем, что игрок проголосовал; не скрываем варианты
   state.myVoted = true;
