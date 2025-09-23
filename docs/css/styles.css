@@ -1,8 +1,13 @@
 body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; }
-.card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+/* Ширина учитывает padding и border, чтобы min/max-width работали корректно */
+*, *::before, *::after { box-sizing: border-box; }
+/* Центрирование главного заголовка на всех страницах */
+h1 { text-align: center; }
+/* Ограничение ширины секций и центрирование по горизонтали */
+.card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin-bottom: 16px; width: 100%; max-width: 960px; min-width: 320px; margin-left: auto; margin-right: auto; }
 .row { display: flex; gap: 8px; margin: 8px 0; flex-wrap: wrap; align-items: center; }
 /* Компактные отступы для подзаголовков под H1 */
-#game-subtitle { margin-top: -12px; }
+#game-subtitle { margin-top: -12px; margin-bottom: -8px; }
 input, button, select { padding: 8px; font-size: 14px; }
 .muted { color:#666; }
 .hidden { display:none; }
@@ -10,6 +15,25 @@ code { background:#f6f8fa; padding:2px 6px; border-radius:6px; }
 .wide { min-width: 320px; }
 #players-list { padding-left: 20px; }
 #players-list li { margin: 2px 0; }
+/* На очень узких экранах разрешаем инпутам быть уже */
+@media (max-width: 400px) { .wide { min-width: 240px; } }
+
+/* Отступ и выравнивание заголовка в карточке выбора игр */
+#games-title-row { justify-content: center; margin-top: 8px; }
+#games-title { margin: 4px 0; }
+/* Отступ слева для кнопки back на странице выбора игр, как у контейнера */
+#games-back-row { max-width: 960px; min-width: 320px; margin-left: auto; margin-right: auto; }
+
+/* Выравнивание заголовка "Ваш никнейм" как в карточке выбора игр */
+#nick-title-row { justify-content: center; margin-top: 8px; }
+#nick-title { margin: 2px 0; }
+
+/* Выравнивание заголовка "Подключение" как в карточке выбора игр */
+#connect-title-row { justify-content: center; margin-top: 8px; }
+#connect-title { margin: 4px 0; }
+
+#players-list { padding-left: 20px; }
+#players-list li { margin: 4px 0; }
 .copied { background: #e6ffed; border-color: #b7eb8f; }
 .copy-failed { background: #fff2f0; border-color: #ffccc7; }
 /* Winner banner */
@@ -17,6 +41,50 @@ code { background:#f6f8fa; padding:2px 6px; border-radius:6px; }
 #nick-saved { display: none; }
 #auth-status { display: none; }
 /* Компактные отступы на странице Лобби */
-#step-3 h3 { margin-bottom: 6px; }
-#step-3 h3 + .row { margin-top: 0; }
+#lobby-title-row { justify-content: center; margin-top: 8px; }
+#lobby-title { margin: 4px 0; }
 #step-3 h4 { margin: 0; }
+
+/* Фиксированная ширина полей в лобби (не зависят от контейнера/флекса) */
+#target-score, #question-seconds, #vote-seconds { width: 8ch; min-width: 8ch; flex: 0 0 auto; }
+
+/* Динамическая сетка плиток игр */
+#root, :root { --tile-min: 280px; }
+.games-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--tile-min, 280px), 1fr));
+  gap: 12px;
+}
+.game-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 140px; /* фиксированная высота как раньше */
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  background: #fff;
+  text-decoration: none;
+  color: inherit;
+  font-weight: 600;
+  user-select: none;
+}
+.game-tile:hover { background: #f6f8fa; }
+
+/* Ограничения ширины/центрирование для верхней кнопки и подзаголовка игры на index */
+#back-1-top, #back-2-top, #game-subtitle {
+  max-width: 960px;
+  min-width: 320px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Сетка выравнивания подписей и полей ввода в лобби */
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 6px; /* row-gap, column-gap */
+  align-items: center;
+  max-width: 280px;
+}
+.settings-label { text-align: left; }
+.settings-input { text-align: right; }
