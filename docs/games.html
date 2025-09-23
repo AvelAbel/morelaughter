@@ -8,18 +8,16 @@
 </head>
 <body>
   <h1>MORELAUGHTER</h1>
-  <div class="row">
+  <div class="row" id="games-back-row">
     <a href="index.html?step=1"><button id="back-games">← Назад к никнейму</button></a>
   </div>
-  <h3>Выберите игру</h3>
 
-  <section class="card" style="padding: 24px;">
-    <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px;">
-      <a href="index.html?step=2" style="text-decoration:none;">
-        <div class="card" style="height:140px; display:flex; align-items:center; justify-content:center; font-weight:600;">
-          Best Answer
-        </div>
-      </a>
+  <section class="card" style="padding: 8px;">
+    <div class="row" id="games-title-row">
+      <h3 id="games-title">Выберите игру</h3>
+    </div>
+    <div class="games-grid">
+      <a class="game-tile" href="index.html?step=2">Best Answer</a>
     </div>
   </section>
 

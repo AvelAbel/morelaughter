@@ -24,7 +24,9 @@
 
   <!-- Шаг 1. Никнейм -->
   <section class="card hidden" id="step-1">
-    <h3>Ваш никнейм</h3>
+    <div class="row" id="nick-title-row">
+      <h3 id="nick-title">Ваш никнейм</h3>
+    </div>
     <div class="row">
       <input id="nick" placeholder="Никнейм" />
       <button id="set-nick">➤</button>
@@ -35,7 +37,9 @@
 
   <!-- Шаг 2. Подключение -->
   <section class="card hidden" id="step-2">
-    <h3>Подключение</h3>
+    <div class="row" id="connect-title-row">
+      <h3 id="connect-title">Подключение</h3>
+    </div>
     <div class="row">
       <input id="join-code" placeholder="Код" size="4" maxlength="4" />
       <button id="join-room">Присоединиться</button>
@@ -49,28 +53,31 @@
   
   <!-- Шаг 3. Лобби -->
   <section class="card hidden" id="step-3">
-    <h3>Лобби</h3>
-    <div class="row" style="margin-top: -4px;">
-      <h4>Лобби — код: <code id="room-code-lobby"></code> <button id="copy-code-lobby">Скопировать</button></h4>
+    <div class="row" id="lobby-title-row">
+      <h3 id="lobby-title">Лобби</h3>
+    </div>
+    <div class="row">
+      <h4>Код комнаты: <code id="room-code-lobby"></code> <button id="copy-code-lobby">Скопировать</button></h4>
+    </div>
+    <div class="row hidden" id="lobby-wait-row">
+      <div class="muted">Ждем, когда <strong id="host-nick-wait">хост</strong> начнет игру<span id="lobby-wait-dots"></span></div>
     </div>
       <div id="lobby-admin" class="hidden">
       <div class="row">
-        <label>Сколько очков нужно набрать? <input id="target-score" type="number" min="1" max="99" placeholder="10" style="width:4ch"/></label>
-      </div>
-      <div class="row">
-        <label>
-          Источник вопросов:
-          <span>
-            <label><input type="radio" name="qsrc" id="qsrc-preset" value="preset" checked> Готовые вопросы</label>
-            <label><input type="radio" name="qsrc" id="qsrc-players" value="players"> Вопросы от игроков</label>
-          </span>
+        <label>Источник вопросов:
+          <select id="qsrc-select">
+            <option value="preset" selected>Готовые вопросы</option>
+            <option value="players">Вопросы от игроков</option>
+          </select>
         </label>
       </div>
-      <div class="row" id="row-question-seconds">
-        <label>Время на вопрос/ответ, сек <input id="question-seconds" type="number" min="10" max="999" step="5" value="60" style="width:5ch"/></label>
-      </div>
-      <div class="row" id="row-vote-seconds">
-        <label>Время на голосование, сек <input id="vote-seconds" type="number" min="5" max="999" step="5" value="45" style="width:5ch"/></label>
+      <div class="settings-grid">
+        <div class="settings-label">До скольки очков игра:</div>
+        <div class="settings-input"><input id="target-score" type="number" min="1" max="99" placeholder="10" style="width:5ch"/></div>
+        <div class="settings-label">Время на вопрос/ответ, сек:</div>
+        <div class="settings-input" id="row-question-seconds"><input id="question-seconds" type="number" min="10" max="999" step="5" value="60" style="width:5ch"/></div>
+        <div class="settings-label">Время на голосование, сек:</div>
+        <div class="settings-input" id="row-vote-seconds"><input id="vote-seconds" type="number" min="5" max="999" step="5" value="45" style="width:5ch"/></div>
       </div>
       <div class="row">
         <button id="start-game">Начать игру</button>
@@ -131,6 +138,9 @@
     <ul id="players-list-round"></ul>
     <div id="room-state" class="muted"></div>
     <div id="round-state" class="muted"></div>
+    <div class="row hidden" id="wait-next-row">
+      <div class="muted">Ждём, когда <strong id="host-nick-next">хост</strong> начнёт следующий раунд<span id="wait-next-dots"></span></div>
+    </div>
   </section>
 
   <script type="module" src="js/main.js"></script>
