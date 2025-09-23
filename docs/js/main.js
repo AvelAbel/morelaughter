@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient.js';
+// Background disabled
 import { state, el, showStep } from './state.js';
 import { updateInviteUI, copy, share } from './ui.js';
 import { ensureUser, createRoom, joinByCode, startGameFromLobby, setActiveStatus } from './room.js';
