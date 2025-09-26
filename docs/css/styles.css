@@ -13,21 +13,144 @@
 }
 
 html, body { height: 100%; }
-html { background: #fff; }
-body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; }
-body:not(.bg-active) { background: #fff; background-color: #fff; }
-body.bg-active { background: #fff; }
+html { background: #1a1a1a; }
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 24px; }
+/* Фон для всего сайта */
+body:not(.bg-active) {
+  background-image: url('../img/background.jpg');
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+body.bg-active {
+  background-image: url('../img/background.jpg');
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
 /* Ширина учитывает padding и border, чтобы min/max-width работали корректно */
 *, *::before, *::after { box-sizing: border-box; }
 /* Центрирование главного заголовка на всех страницах */
-h1 { text-align: center; }
+h1 { text-align: center; color: #fff; }
+/* Логотип в заголовке */
+#logo { width: 20%; height: auto; }
 /* Ограничение ширины секций и центрирование по горизонтали */
-.card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin-bottom: 16px; width: 100%; max-width: 960px; min-width: 320px; margin-left: auto; margin-right: auto; }
+.card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin-bottom: 16px; width: 100%; max-width: 960px; min-width: 320px; margin-left: auto; margin-right: auto; background: #717171; color: #FFFFFF; }
 .row { display: flex; gap: 8px; margin: 8px 0; flex-wrap: wrap; align-items: center; }
-/* Компактные отступы для подзаголовков под H1 */
-#game-subtitle { margin-top: -12px; margin-bottom: -8px; }
+/* Подзаголовок игры в топбаре */
+#game-subtitle { margin: 0; }
+/* Уменьшаем отступы у текста подзаголовка */
+#game-subtitle h3 { margin: 0; }
 input, button, select { padding: 8px; font-size: 14px; }
 .muted { color:#666; }
+/* Внутри секций весь текст белый, включая элементы с классом muted и спец-баннер */
+.card .muted { color: #FFFFFF; }
+.card #winner-banner { color: #FFFFFF; }
+/* Белый текст для полей и кнопок внутри секции */
+.card input, .card select, .card button, .card label, .card a { color: #FFFFFF; }
+/* Прозрачный фон и светлая рамка у элементов форм для читаемости на сером фоне */
+.card input, .card select, .card textarea, .card button {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+.card input:focus, .card select:focus, .card textarea:focus, .card button:focus {
+  outline: none;
+  border-color: #FFFFFF;
+}
+.card input::placeholder, .card textarea::placeholder {
+  color: rgba(255, 255, 255, 0.85);
+}
+/* Стили для кнопок-ответов (переключателей) */
+.vote-option[aria-checked="true"] {
+  border: 2px solid #407AF6 !important;
+  box-shadow: none;
+}
+.vote-option.muted { opacity: 0.7; }
+
+/* Белая заливка, каждая кнопка в своей строке, чёрный контур у выбранного */
+.vote-option {
+  display: block;
+  width: 100%;
+  background: #FFFFFF !important;
+  color: #000000 !important;
+  border: 2px solid transparent !important;
+  border-radius: 12px;
+  padding: 8px 14px;
+  text-align: left;
+  margin: 4px 0;
+}
+
+/* Единые стили кнопок */
+/* Цвет кода комнаты — чёрный для контраста */
+#room-code-lobby, #room-code-2 { color: #000000; }
+
+/* Стиль выпадающего списка как у полей ввода */
+.card select {
+  color: #000000;
+  background: linear-gradient(#F4F4F4, #F4F4F4) padding-box,
+              linear-gradient(90deg, #FFA412, #407AF6) border-box;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  box-shadow: 0 0 6px rgba(81, 102, 243, 0.25);
+}
+.card select:focus {
+  outline: none;
+  box-shadow: 0 0 8px rgba(81, 102, 243, 0.4);
+}
+/* Иконка внутри поля ввода никнейма */
+.input-with-icon { position: relative; display: inline-block; }
+.input-with-icon input { padding-right: 38px; }
+.input-with-icon .icon-button {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  background: url('../img/arrownext.png') center/contain no-repeat;
+  border: none;
+  cursor: pointer;
+}
+/* Единый стиль полей ввода текста */
+.card input,
+.card textarea {
+  color: #000000;
+  background: linear-gradient(#F4F4F4, #F4F4F4) padding-box,
+              linear-gradient(90deg, #FFA412, #407AF6) border-box;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  box-shadow: 0 0 6px rgba(81, 102, 243, 0.25);
+}
+.card input::placeholder,
+.card textarea::placeholder {
+  color: rgba(0, 0, 0, 0.6);
+}
+.card input:focus,
+.card textarea:focus {
+  outline: none;
+  box-shadow: 0 0 8px rgba(81, 102, 243, 0.4);
+}
+
+button.btn-back, .btn-back {
+  background-image: linear-gradient(90deg, #9EF9C4 0%, #71B9B9 100%);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 12px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+button.btn-action, .btn-action {
+  background-image: linear-gradient(90deg, #11CCF6 0%, #7193B9 100%);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 12px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+button.btn-back:hover, button.btn-action:hover { filter: brightness(0.98); }
+button.btn-back:disabled, button.btn-action:disabled { opacity: 0.65; cursor: default; pointer-events: none; }
 .hidden { display:none; }
 code { background:#f6f8fa; padding:2px 6px; border-radius:6px; }
 .wide { min-width: 320px; }
@@ -45,10 +168,16 @@ code { background:#f6f8fa; padding:2px 6px; border-radius:6px; }
 /* Выравнивание заголовка "Ваш никнейм" как в карточке выбора игр */
 #nick-title-row { justify-content: center; margin-top: 8px; }
 #nick-title { margin: 2px 0; }
+/* Центрируем элементы ввода никнейма */
+#step-1 .row { justify-content: center; }
 
 /* Выравнивание заголовка "Подключение" как в карточке выбора игр */
 #connect-title-row { justify-content: center; margin-top: 8px; }
 #connect-title { margin: 4px 0; }
+
+/* Центровка элементов на шаге 2 */
+#step-2 .row { justify-content: center; }
+.input-group { display: inline-flex; align-items: center; gap: 8px; }
 
 #players-list { padding-left: 20px; }
 #players-list li { margin: 4px 0; }
@@ -81,24 +210,34 @@ code { background:#f6f8fa; padding:2px 6px; border-radius:6px; }
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 140px; /* фиксированная высота как раньше */
+  --tile-height: 140px;
+  height: var(--tile-height); /* фиксированная высота как раньше */
   border: 1px solid #ddd;
   border-radius: 12px;
-  background: #fff;
+  background: radial-gradient(circle at center, #11CCF6 0%, #e091d3 100%);
+  background-size: 100% 100%;
   text-decoration: none;
-  color: inherit;
+  color: #000000;
+  font-size: calc(var(--tile-height) * 0.2);
   font-weight: 600;
   user-select: none;
 }
-.game-tile:hover { background: #f6f8fa; }
+.game-tile:hover { filter: brightness(0.98); }
 
-/* Ограничения ширины/центрирование для верхней кнопки и подзаголовка игры на index */
-#back-1-top, #back-2-top, #game-subtitle {
+/* Топбар над шагами 2–4: кнопка слева/справа и название на противоположной стороне */
+#topbar {
   max-width: 960px;
   min-width: 320px;
   margin-left: auto;
   margin-right: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: nowrap;
 }
+/* На лобби меняем порядок: кнопка назад слева, текст справа */
+#topbar.lobby #back-2-top { order: 1; }
+#topbar.lobby #game-subtitle { order: 2; }
 
 /* Небольшая вуаль для повышения контраста текста поверх пёстрого фона */
 body::before {
