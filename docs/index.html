@@ -9,17 +9,17 @@
 <body>
   <h1>MORELAUGHTER</h1>
 
-  <!-- Подзаголовок игры -->
-  <div class="row hidden" id="game-subtitle">
-    <h3 class="muted">Best Answer</h3>
-  </div>
-
-  <!-- Кнопки навигации сверху -->
-  <div class="row hidden" id="back-1-top">
-    <button id="back-1">← в меню игр</button>
-  </div>
-  <div class="row hidden" id="back-2-top">
-    <button id="back-2">← Назад</button>
+  <!-- Верхний топбар: кнопка и название игры на одном уровне -->
+  <div class="row" id="topbar">
+    <div class="hidden" id="back-1-top">
+      <button id="back-1" class="btn-back">← в меню игр</button>
+    </div>
+    <div class="hidden" id="game-subtitle">
+      <h3 class="muted">Best Answer</h3>
+    </div>
+    <div class="hidden" id="back-2-top">
+      <button id="back-2" class="btn-back">← Назад</button>
+    </div>
   </div>
 
   <!-- Шаг 1. Никнейм -->
@@ -28,8 +28,10 @@
       <h3 id="nick-title">Ваш никнейм</h3>
     </div>
     <div class="row">
-      <input id="nick" placeholder="Никнейм" />
-      <button id="set-nick">➤</button>
+      <div class="input-with-icon">
+        <input id="nick" placeholder="Никнейм" />
+        <button id="nick-go" type="button" class="icon-button" aria-label="Продолжить"></button>
+      </div>
       <span id="nick-saved" class="muted"></span>
       <span id="auth-status" class="muted"></span>
     </div>
@@ -41,12 +43,16 @@
       <h3 id="connect-title">Подключение</h3>
     </div>
     <div class="row">
-      <input id="join-code" placeholder="Код" size="4" maxlength="4" />
-      <button id="join-room">Присоединиться</button>
+      <div class="input-group">
+        <input id="join-code" placeholder="Код" size="4" maxlength="4" />
+        <button id="join-room" class="btn-action">Присоединиться</button>
+      </div>
+    </div>
+    <div class="row">
       <span id="join-status" class="muted"></span>
     </div>
     <div class="row">
-      <button id="create-room">Создать комнату</button>
+      <button id="create-room" class="btn-action">Создать комнату</button>
     </div>
   </section>
 
@@ -57,7 +63,7 @@
       <h3 id="lobby-title">Лобби</h3>
     </div>
     <div class="row">
-      <h4>Код комнаты: <code id="room-code-lobby"></code> <button id="copy-code-lobby">Скопировать</button></h4>
+      <h4>Код комнаты: <code id="room-code-lobby"></code> <button id="copy-code-lobby" class="btn-action">Скопировать</button></h4>
     </div>
     <div class="row hidden" id="lobby-wait-row">
       <div class="muted">Ждем, когда <strong id="host-nick-wait">хост</strong> начнет игру<span id="lobby-wait-dots"></span></div>
@@ -80,7 +86,7 @@
         <div class="settings-input" id="row-vote-seconds"><input id="vote-seconds" type="number" min="5" max="999" step="5" value="45" style="width:5ch"/></div>
       </div>
       <div class="row">
-        <button id="start-game">Начать игру</button>
+        <button id="start-game" class="btn-action">Начать игру</button>
       </div>
     </div>
     <div class="row"><div class="muted">Игроки:</div></div>
@@ -91,7 +97,7 @@
 <!-- Шаг 4. Раунд -->
   <section class="card hidden" id="step-4">
     <div class="row" id="game-title-row">
-      <h3 id="game-title">Игра (<code id="room-code-2">—</code>)</h3>
+      <h3 id="game-title">Игра <code id="room-code-2"></code></h3>
     </div>
     <div class="row" id="phase-row">
       <strong>Фаза:</strong>
@@ -104,7 +110,7 @@
     </div>
     <div class="row hidden" id="compose-row-input">
       <input id="custom-question" placeholder="Введите свой вопрос" class="wide" />
-      <button id="submit-custom-question">Отправить вопрос</button>
+      <button id="submit-custom-question" class="btn-action">Отправить вопрос</button>
     </div>
     <!-- Фаза голосования: таймер -->
     <div class="row hidden" id="voting-row-message">
@@ -117,20 +123,20 @@
     </div>
     <div class="row">
       <input id="answer-text" placeholder="Ваш ответ" class="wide" />
-      <button id="submit-answer">Отправить ответ</button>
+      <button id="submit-answer" class="btn-action">Отправить ответ</button>
     </div>
     <div class="row">
       <div id="answers-list" class="wide hidden"></div>
     </div>
     <div class="row">
-      <button id="vote" class="hidden" disabled>Выбрать лучший ответ</button>
+      <button id="vote" class="hidden btn-action" disabled>Выбрать лучший ответ</button>
     </div>
     <div class="row hidden" id="winner-banner"></div>
     <div class="row">
-      <button id="next-round" class="hidden">Следующий раунд</button>
+      <button id="next-round" class="hidden btn-action">Следующий раунд</button>
     </div>
     <div class="row">
-      <button id="end-game" class="hidden">Завершить игру</button>
+      <button id="end-game" class="hidden btn-action">Завершить игру</button>
     </div>
     <!-- Список игроков в раунде с галочками отправивших -->
     <div class="row"><div class="muted">Игроки:</div></div>
