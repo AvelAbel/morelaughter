@@ -1,7 +1,7 @@
 import { state, el } from './state.js';
 export function updateInviteUI() {
-  const rcLobby = el('room-code-lobby'); if (rcLobby) rcLobby.textContent = state.currentRoomCode || '—';
-  const rc2 = el('room-code-2'); if (rc2) rc2.textContent = state.currentRoomCode || '—';
+  const rcLobby = el('room-code-lobby'); if (rcLobby) rcLobby.textContent = state.currentRoomCode || '';
+  const rc2 = el('room-code-2'); if (rc2) rc2.textContent = state.currentRoomCode || '';
   const cLobby = el('copy-code-lobby'); if (cLobby) cLobby.classList.toggle('hidden', !state.currentRoomCode);
 }
 

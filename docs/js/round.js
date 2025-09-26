@@ -17,8 +17,8 @@ async function autoSubmitPendingVote() {
   try {
     if (!state.currentRoundId) return;
     if (state.myVoted) return;
-    const checked = document.querySelector('input[name="vote-answer"]:checked');
-    const ansId = checked ? checked.value : '';
+    const checkedBtn = document.querySelector('.vote-option[aria-checked="true"]');
+    const ansId = state.selectedAnswerId || (checkedBtn ? checkedBtn.dataset.answerId : '');
     if (!ansId) return;
     let uid = state.currentUser?.id || null;
     if (!uid) {
@@ -229,7 +229,7 @@ export async function refreshRoomState() {
     if (phaseName === 'answering' || phaseName === 'voting' || phaseName === 'results') {
       // Ничего здесь не перерисовываем — предотвратить перезапись и мигание
     } else {
-      let labelText = '—';
+      let labelText = '';
       if (phaseName === 'composing') labelText = 'Придумывание вопроса.';
       phaseLabel.innerHTML = labelText;
     }
@@ -332,7 +332,7 @@ export async function refreshRoomState() {
 
   // Обновляем текст вопроса над полем ответа
   const qText = el('question-text');
-  if (qText) qText.textContent = questionText || '—';
+  if (qText) qText.textContent = questionText || '';
 
   // Фиксация фазы и поведение UI по фазам
   const prevPhase = state.currentPhase;
@@ -544,24 +544,23 @@ export async function refreshRoomState() {
     // На каждом обновлении: восстановить выбор и применить disabled по myVoted
     const contNow = el('answers-list');
     if (contNow) {
-      // Применяем правило запрета самоголоса при 3+ вариантах и общий disabled по myVoted
-      const inputs = Array.from(contNow.querySelectorAll('input[name="vote-answer"]'));
-      const disallowSelf = inputs.length >= 3;
+      // Кнопки-переключатели: применяем запрет самоголоса при 3+ вариантах и disabled после голосования
+      const btns = Array.from(contNow.querySelectorAll('.vote-option'));
+      const disallowSelf = btns.length >= 3;
       const myUid = state.currentUser?.id || null;
-      inputs.forEach(inp => {
-        const isOwn = myUid && inp.dataset.authorId === myUid;
-        if (disallowSelf && isOwn && !state.myVoted) {
-          inp.disabled = true;
-          inp.parentElement?.classList.add('muted');
-          if (inp.checked) inp.checked = false;
-        } else {
-          inp.disabled = !!state.myVoted;
+      btns.forEach(btn => {
+        const isOwn = myUid && btn.dataset.authorId === myUid;
+        const shouldDisable = (!!state.myVoted) || (disallowSelf && isOwn && !state.myVoted);
+        btn.disabled = shouldDisable;
+        btn.classList.toggle('muted', disallowSelf && isOwn);
+        if (disallowSelf && isOwn && btn.getAttribute('aria-checked') === 'true') {
+          btn.setAttribute('aria-checked', 'false');
+          if (state.selectedAnswerId === btn.dataset.answerId) state.selectedAnswerId = null;
         }
       });
-      const prevSel = state.selectedAnswerId || (contNow.querySelector('input[name="vote-answer"]:checked')?.value || null);
+      const prevSel = state.selectedAnswerId || (contNow.querySelector('.vote-option[aria-checked="true"]')?.dataset.answerId || null);
       if (prevSel) {
-        const node = contNow.querySelector(`input[name="vote-answer"][value="${prevSel}"]`);
-        if (node) node.checked = true;
+        contNow.querySelectorAll('.vote-option').forEach(b => b.setAttribute('aria-checked', String(b.dataset.answerId === prevSel)));
       }
       contNow.classList.toggle('muted', !!state.myVoted);
     }
@@ -709,7 +708,7 @@ export async function refreshRoomState() {
     const isAuthor = latest.author_id && latest.author_id === state.currentUser?.id;
     if (composeRowMsg) composeRowMsg.classList.remove('hidden');
     if (composeMsg) composeMsg.textContent = isAuthor ? 'Придумайте вопрос'
-      : `Игрок ${(players||[]).find(p=>p.player_id===latest.author_id)?.nickname || '—'} придумывает вопрос`;
+      : `Игрок ${(players||[]).find(p=>p.player_id===latest.author_id)?.nickname || ''} придумывает вопрос`;
     if (isAuthor && composeRowInput) composeRowInput.classList.remove('hidden');
 
     const deadlineMs = latest.compose_deadline ? Date.parse(latest.compose_deadline) : Date.now();
@@ -1119,9 +1118,7 @@ export async function startVoting() {
 
 export async function loadAnswers() {
   if (!state.currentRoundId) return alert('Раунд не начат');
-  const prevSelected =
-    state.selectedAnswerId ||
-    (document.querySelector('input[name="vote-answer"]:checked')?.value || null);
+  const prevSelected = state.selectedAnswerId || (document.querySelector('.vote-option[aria-checked="true"]')?.dataset.answerId || null);
 
   const { data: ans, error } = await supabase
     .from('answers')
@@ -1134,28 +1131,33 @@ export async function loadAnswers() {
   const container = el('answers-list');
   if (container) {
     container.innerHTML = '';
-    const ul = document.createElement('div');
+    const wrap = document.createElement('div');
     ordered.forEach(a => {
-      const li = document.createElement('div');
-      const input = document.createElement('input');
-      input.type = 'radio';
-      input.name = 'vote-answer';
-      input.value = a.id;
-      input.dataset.authorId = a.author_id || '';
-      const isOwn = myUid && a.author_id === myUid;
-      if (disallowSelf && isOwn) {
-        input.disabled = true;
-        li.classList.add('muted');
-        input.title = 'Нельзя голосовать за свой ответ при 3+ вариантах';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn-action vote-option';
+      btn.dataset.answerId = a.id;
+      btn.dataset.authorId = a.author_id || '';
+      btn.setAttribute('role', 'radio');
+      btn.setAttribute('aria-checked', String(a.id === prevSelected));
+      btn.textContent = a.text;
+      if (disallowSelf && myUid && a.author_id === myUid) {
+        btn.disabled = true;
+        btn.classList.add('muted');
+        btn.title = 'Нельзя голосовать за свой ответ при 3+ вариантах';
         if (state.selectedAnswerId === a.id) state.selectedAnswerId = null;
       }
-      input.checked = (a.id === prevSelected);
-      input.addEventListener('change', () => { state.selectedAnswerId = a.id; });
-      li.appendChild(input);
-      li.appendChild(document.createTextNode(' ' + a.text));
-      ul.appendChild(li);
+      btn.onclick = () => {
+        if (state.myVoted) return;
+        if (btn.disabled) return;
+        // Один выбор: сбрасываем остальные
+        wrap.querySelectorAll('.vote-option').forEach(b => b.setAttribute('aria-checked', 'false'));
+        btn.setAttribute('aria-checked', 'true');
+        state.selectedAnswerId = a.id;
+      };
+      wrap.appendChild(btn);
     });
-    container.appendChild(ul);
+    container.appendChild(wrap);
   }
 }
 
@@ -1181,8 +1183,8 @@ export async function vote() {
   if (!state.currentRoundId) return alert('Раунд не начат');
   const voteBtnLock = el('vote');
   if (voteBtnLock) { voteBtnLock.disabled = true; voteBtnLock.classList.add('muted'); }
-  const checked = document.querySelector('input[name="vote-answer"]:checked');
-  const ansId = checked ? checked.value : '';
+  const checkedBtn = document.querySelector('.vote-option[aria-checked="true"]');
+  const ansId = checkedBtn ? checkedBtn.dataset.answerId : '';
   if (!ansId) { if (voteBtnLock) { voteBtnLock.disabled = false; voteBtnLock.classList.remove('muted'); } return alert('Выберите ответ'); }
   // Защита от самоголоса при 3+ ответах
   try {
@@ -1213,9 +1215,7 @@ export async function vote() {
   const container = el('answers-list');
   if (container) {
     container.classList.add('muted');
-    container.querySelectorAll('input[name="vote-answer"]').forEach(inp => {
-      inp.disabled = true;
-    });
+    container.querySelectorAll('.vote-option').forEach(btn => { btn.disabled = true; });
   }
   const voteBtn = el('vote'); if (voteBtn) { voteBtn.classList.add('hidden'); voteBtn.disabled = true; }
   // Обновим состояние, чтобы появилась галочка у проголосовавшего

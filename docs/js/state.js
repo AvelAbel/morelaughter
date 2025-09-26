@@ -23,9 +23,16 @@ export function showStep(n) {
   
   // Верхние кнопки навигации: показ по шагам
   try {
+    const topbar = document.getElementById('topbar');
     const b1 = document.getElementById('back-1-top');
     const b2 = document.getElementById('back-2-top');
     const gsub = document.getElementById('game-subtitle');
+    // Показываем топбар только на шагах 2, 3 и 4
+    if (topbar) {
+      topbar.classList.toggle('hidden', !(n === 2 || n === 3 || n === 4));
+      // На лобби меняем порядок элементов (кнопка слева, текст справа)
+      topbar.classList.toggle('lobby', n === 3 || n === 4);
+    }
     if (b1) b1.classList.toggle('hidden', n !== 2);
     if (b2) b2.classList.toggle('hidden', !(n === 3 || n === 4));
     if (gsub) gsub.classList.toggle('hidden', !(n === 2 || n === 3 || n === 4));

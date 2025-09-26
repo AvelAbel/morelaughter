@@ -27,8 +27,7 @@ if (stepParam >= 1 && stepParam <= 4) {
 const nickEl = el('nick'); if (nickEl) nickEl.value = state.nickname;
 
 // Шаг 1
-const btnSetNick = el('set-nick');
-if (btnSetNick) btnSetNick.onclick = async () => {
+async function handleSetNick() {
   const s = el('auth-status');
   try {
     const u = await ensureUser();
@@ -44,7 +43,10 @@ if (btnSetNick) btnSetNick.onclick = async () => {
     if (s) s.textContent = 'Enable Anonymous auth in Supabase';
     alert(e?.message || e);
   }
-};
+}
+const btnSetNick = el('set-nick'); if (btnSetNick) btnSetNick.onclick = handleSetNick;
+const btnNickGo = el('nick-go'); if (btnNickGo) btnNickGo.onclick = handleSetNick;
+if (nickEl) nickEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleSetNick(); });
 
 // Назад
 const btnBack1 = el('back-1'); if (btnBack1) btnBack1.onclick = () => { window.location.href = 'games.html'; };
