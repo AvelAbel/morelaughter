@@ -721,16 +721,60 @@ export async function refreshRoomState() {
     try { if (state._composeTimerId) clearInterval(state._composeTimerId); } catch {}
     state._composeTimerId = setInterval(() => {
       const left = renderTimer();
-      if (left <= 0) { clearInterval(state._composeTimerId); }
+      if (left <= 0) {
+        try { if (state._composeTimerId) clearInterval(state._composeTimerId); } catch {}
+        state._composeTimerId = null;
+        // Мгновенный fallback у хоста: если вопрос не задан, подставить пресет и перейти в answering с дедлайном
+        (async () => {
+          try {
+            if (!state.isHost || !state.currentRoundId) return;
+            const { data: roundRow } = await supabase
+              .from('rounds')
+              .select('id, phase, question_text')
+              .eq('id', state.currentRoundId)
+              .single();
+            if (!roundRow || roundRow.phase !== 'composing' || (roundRow.question_text && String(roundRow.question_text).trim())) return;
+            const { data: q } = await supabase.rpc('pick_question');
+            const qid = q?.[0]?.id || null;
+            let qSecs = 60;
+            try {
+              const { data: cfg } = await supabase
+                .from('rooms')
+                .select('question_seconds')
+                .eq('id', state.currentRoomId)
+                .single();
+              qSecs = Number(cfg?.question_seconds || 60) || 60;
+            } catch {}
+            const deadlineAns = new Date(Date.now() + qSecs * 1000).toISOString();
+            await supabase
+              .from('rounds')
+              .update({ question_id: qid, phase: 'answering', question_source: 'preset', ended_at: deadlineAns })
+              .eq('id', state.currentRoundId)
+              .eq('phase', 'composing');
+          } catch {}
+        })();
+      }
     }, 250);
 
-    // Таймаут → fallback (только у хоста)
+    // Таймаут → fallback (только у хоста): подставить пресет-вопрос и перейти в answering с дедлайном
     if (state.isHost && deadlineMs <= Date.now() && !latest.question_text) {
       const { data: q } = await supabase.rpc('pick_question');
       const qid = q?.[0]?.id || null;
-      await supabase.from('rounds')
-        .update({ question_id: qid, phase: 'answering', question_source: 'preset' })
-        .eq('id', state.currentRoundId);
+      let qSecs = 60;
+      try {
+        const { data: cfg } = await supabase
+          .from('rooms')
+          .select('question_seconds')
+          .eq('id', state.currentRoomId)
+          .single();
+        qSecs = Number(cfg?.question_seconds || 60) || 60;
+      } catch {}
+      const deadlineAns = new Date(Date.now() + qSecs * 1000).toISOString();
+      await supabase
+        .from('rounds')
+        .update({ question_id: qid, phase: 'answering', question_source: 'preset', ended_at: deadlineAns })
+        .eq('id', state.currentRoundId)
+        .eq('phase', 'composing');
     }
   }
 
