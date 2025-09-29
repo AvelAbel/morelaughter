@@ -155,12 +155,15 @@ export async function refreshRoomState() {
   // Загружаем информацию о комнате (roomInfo)
   const { data: roomInfo, error: roomError } = await supabase
     .from('rooms')
-    .select('id, owner_id, status, target_score, question_seconds, vote_seconds, question_source')
+    .select('id, owner_id, status, target_score, question_seconds, vote_seconds, question_source, archived, archived_at')
     .eq('id', state.currentRoomId)
     .single();
   console.log('Room info query result:', { roomInfo, roomError });
-  // Определяем хоста для авто-действий по данным room_players
-  const amIHost = (players || []).some(p => p.player_id === state.currentUser?.id && p.is_host);
+  // Определяем хоста для авто-действий: room_players OR owner_id OR сохранённый флаг state.isHost
+  const amIHost = ((players || []).some(p => p.player_id === state.currentUser?.id && p.is_host))
+    || (!!roomInfo && roomInfo.owner_id === state.currentUser?.id)
+    || !!state.isHost;
+  let archivedOnce = false;
   
   const { data: rounds } = await supabase
     .from('rounds')
@@ -506,7 +509,8 @@ export async function refreshRoomState() {
       state._votingTimerId = setInterval(async () => {
         const left = renderVotingTimer();
         if (left <= 0) {
-          clearInterval(state._votingTimerId);
+          try { if (state._votingTimerId) clearInterval(state._votingTimerId); } catch {}
+          state._votingTimerId = null;
           // Перед финализацией: если у игрока выбран вариант — отправляем его голос
           try { await autoSubmitPendingVote(); } catch {}
           // Таймаут голосования → финализация у хоста
@@ -620,6 +624,15 @@ export async function refreshRoomState() {
       banner.textContent = `Победил игрок ${winner.nickname}`;
       if (nextBtn) nextBtn.classList.add('hidden');
       if (endBtn) endBtn.classList.remove('hidden');
+      if (amIHost && state.currentRoomId && !roomInfo?.archived && !archivedOnce) {
+        try {
+          await supabase
+            .from('rooms')
+            .update({ archived: true, archived_at: new Date().toISOString() })
+            .eq('id', state.currentRoomId);
+          archivedOnce = true;
+        } catch (e) { console.error('Archive room after winner (results) failed:', e); }
+      }
     } else {
       if (banner) { banner.classList.add('hidden'); banner.textContent = ''; }
       // Кнопка следующего раунда: только хосту
@@ -699,6 +712,14 @@ export async function refreshRoomState() {
         banner2.textContent = `Победил игрок ${winnerNow.nickname}`;
         if (nextBtn2) nextBtn2.classList.add('hidden');
         if (endBtn2) endBtn2.classList.remove('hidden');
+        if (amIHost && state.currentRoomId && !roomInfo?.archived) {
+          try {
+            await supabase
+              .from('rooms')
+              .update({ archived: true, archived_at: new Date().toISOString() })
+              .eq('id', state.currentRoomId);
+          } catch (e) { console.error('Archive room after winner (global check) failed:', e); }
+        }
       }
     }
   } catch {}

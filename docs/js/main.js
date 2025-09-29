@@ -236,6 +236,13 @@ const btnVote = el('vote'); if (btnVote) btnVote.onclick = vote;
 const btnFinalize = el('finalize'); if (btnFinalize) btnFinalize.onclick = finalize;
 const btnEndGame = el('end-game'); if (btnEndGame) btnEndGame.onclick = async () => {
   try {
+    if (state.isHost && state.currentRoomId) {
+      await supabase.from('rooms').update({
+        status: 'archived',
+        archived: true,
+        archived_at: new Date().toISOString()
+      }).eq('id', state.currentRoomId);
+    }
     state.autoJumpToRound = false;          // блокируем автопереход
     await setActiveStatus(false);
     if (state.roomChannel) {                // снимем подписку комнаты

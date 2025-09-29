@@ -93,6 +93,13 @@ export async function ensureUser() {
     const { data, error } = await supabase.auth.signInAnonymously();
     if (error) throw new Error(error.message);
     state.currentUser = data.user;
+    // На некоторых экранах main.js читает user сразу из auth.getUser — синхронизируем
+    try {
+      const g = await supabase.auth.getUser();
+      if (g?.data?.user?.id && !state.currentUser?.id) {
+        state.currentUser = g.data.user;
+      }
+    } catch {}
   }
   return state.currentUser;
 }
@@ -102,6 +109,20 @@ function randomCode(len=4) {
   let s = '';
   for (let i=0;i<len;i++) s += chars[Math.floor(Math.random()*chars.length)];
   return s;
+}
+
+function normalizeRoomCodeInput(raw) {
+  const map = {
+    'А': 'A', 'В': 'B', 'Е': 'E', 'К': 'K', 'М': 'M', 'Н': 'H', 'О': 'O',
+    'Р': 'P', 'С': 'S', 'Т': 'T', 'Х': 'X', 'У': 'Y'
+  };
+  let s = String(raw || '').trim().toUpperCase();
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    out += map[ch] || ch;
+  }
+  return out;
 }
 
 export async function createRoom() {
@@ -230,12 +251,43 @@ export async function joinByCode(codeRaw, statusEl, buttonEl) {
   } catch {}
   try {
     const user = await ensureUser();
-    const code = (codeRaw || '').trim().toUpperCase();
-    if (!code) throw new Error('Введите код');
-    const { data: room, error } = await supabase.rpc('get_room_by_code', { p_code: code }).single();
-    if (error || !room) throw new Error('Комната не найдена');
-    state.currentRoomId = room.id;
-    state.currentRoomCode = room.code;
+    const codeInput = (codeRaw || '').trim();
+    const codeNorm = normalizeRoomCodeInput(codeInput);
+    const candidates = Array.from(new Set([codeNorm]));
+    if (!codeNorm) throw new Error('Введите код');
+    // 1) RPC может вернуть массив или объект; 2) подстрахуемся селектом из таблицы
+    const { data: rpcData, error: rpcError } = await supabase.rpc('get_room_by_code', { p_code: codeNorm });
+    let room = null;
+    if (!rpcError && rpcData) {
+      room = Array.isArray(rpcData) ? (rpcData[0] || null) : rpcData;
+      // unwrap function-return wrapper like { get_room_by_code: {...} }
+      if (room && !Array.isArray(room) && !(room.id || room.room_id || room.roomId)) {
+        const maybeWrapped = room.get_room_by_code || room.GET_ROOM_BY_CODE || null;
+        if (maybeWrapped && typeof maybeWrapped === 'object') {
+          room = maybeWrapped;
+        } else {
+          // Fallback: try first nested object having id
+          try {
+            const nested = Object.values(room).find(v => v && typeof v === 'object' && (v.id || v.room_id || v.roomId));
+            if (nested) room = nested;
+          } catch {}
+        }
+      }
+    }
+    if (!room || !(room.id || room.room_id || room.roomId)) {
+      const { data: roomSelArr } = await supabase
+        .from('rooms')
+        .select('id, code, status, archived')
+        .in('code', candidates)
+        .limit(1);
+      room = (Array.isArray(roomSelArr) ? roomSelArr[0] : null) || null;
+    }
+    if (!room) throw new Error('Комната не найдена');
+    const roomId = room?.id || room?.room_id || room?.roomId || null;
+    const roomCode = room?.code || room?.room_code || room?.roomCode || codeNorm;
+    if (!roomId) throw new Error('Комната не найдена');
+    state.currentRoomId = roomId;
+    state.currentRoomCode = roomCode || codeNorm;
     state.isHost = false;
     state.roomPlayersCache = {};
     localStorage.setItem('last_room_code', state.currentRoomCode);
@@ -251,8 +303,9 @@ export async function joinByCode(codeRaw, statusEl, buttonEl) {
       console.error('Error checking existing membership:', selErr);
     }
     if (!existing) {
+      const nickname = (state.nickname || '').trim() || 'Player';
       const { error: insErr } = await supabase.from('room_players').insert({
-        player_id: user.id, room_id: state.currentRoomId, nickname: state.nickname, is_host: false
+        player_id: user.id, room_id: state.currentRoomId, nickname, is_host: false
       });
       if (insErr) {
         const msg = String(insErr.message || '');
@@ -262,9 +315,10 @@ export async function joinByCode(codeRaw, statusEl, buttonEl) {
       }
     }
     // Обновляем локальный кеш игроков (включая себя)
+    const nickname2 = (state.nickname || '').trim() || 'Player';
     state.roomPlayersCache[user.id] = {
       player_id: user.id,
-      nickname: state.nickname,
+      nickname: nickname2,
       score: 0,
       is_host: false,
       is_active: true,
