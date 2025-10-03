@@ -152,6 +152,8 @@ button.btn-action, .btn-action {
 button.btn-back:hover, button.btn-action:hover { filter: brightness(0.98); }
 button.btn-back:disabled, button.btn-action:disabled { opacity: 0.65; cursor: default; pointer-events: none; }
 .hidden { display:none; }
+/* Приоритетное скрытие вкладок по классу hidden */
+.phase-tabs .tab.hidden { display: none; }
 code { background:#f6f8fa; padding:2px 6px; border-radius:6px; }
 .wide { min-width: 320px; }
 #players-list { padding-left: 20px; }
@@ -187,6 +189,69 @@ code { background:#f6f8fa; padding:2px 6px; border-radius:6px; }
 #winner-banner { font-size: 22px; font-weight: 700; color: #1d1d1f; }
 #nick-saved { display: none; }
 #auth-status { display: none; }
+
+/* Game header with tabs */
+.game-header {
+  background: #f2f2f2;
+  border-radius: 10px 10px 0 0;
+  padding: 0;
+  margin: -16px -16px 0 -16px;
+}
+.game-header-inner { display: flex; align-items: center; justify-content: center; padding: 12px 0; }
+.game-header .game-title { margin: 12px 0; text-align: center; color: #333333; }
+.game-header .game-title code#room-code-2 { background: #e0e0e0; color: #1d1d1f; padding: 2px 6px; border-radius: 6px; }
+.phase-tabs { display: flex; gap: 0; margin: 0 -16px 0 -16px; width: auto; }
+.phase-tabs { overflow: hidden; }
+.phase-tabs .tab {
+  background: #717171;
+  color: #d9d9d9;
+  border: 1px solid #717171;
+  padding: 6px 10px;
+  border-radius: 0 0 8px 8px;
+  transform: translateY(0);
+  flex: 1 1 0;
+  text-align: center;
+  white-space: nowrap;
+  min-width: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.phase-tabs .tab:first-child { border-bottom-left-radius: 10px; }
+.phase-tabs .tab.hidden + .tab { border-bottom-left-radius: 10px; }
+.phase-tabs .tab:last-child { border-bottom-right-radius: 10px; }
+.phase-tabs .tab.active {
+  background: #f2f2f2;
+  color: #1d1d1f;
+  border-color: #f2f2f2;
+  box-shadow: none;
+}
+
+/* Компактный режим вкладок: активная вкладка полноразмерная, остальные — иконки */
+.phase-tabs.compact { align-items: stretch; }
+.phase-tabs.compact .tab { flex: 0 0 42px; padding-left: 0; padding-right: 0; }
+.phase-tabs.compact .tab.active { flex: 1 1 auto; padding-left: 10px; padding-right: 10px; font-size: inherit; }
+.phase-tabs.compact .tab:not(.active) { font-size: 0; }
+/* Иконки для вкладок по data-phase: всегда перед текстом */
+.phase-tabs .tab::before {
+  content: "";
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: 16px 16px;
+}
+.phase-tabs.compact .tab:not(.active)::before { margin-right: 0; }
+.phase-tabs.compact .tab:not(.active) .tab-timer { display: none !important; }
+.phase-tabs .tab[data-phase="composing"]:not(.hidden)::before { background-image: url('../img/icon-composing.svg'); }
+.phase-tabs .tab[data-phase="answering"]::before { background-image: url('../img/icon-answering.svg'); }
+.phase-tabs .tab[data-phase="voting"]::before { background-image: url('../img/icon-voting.svg'); }
+.phase-tabs .tab[data-phase="results"]::before { background-image: url('../img/icon-results.svg'); }
+/* Фиксируем ширину счётчика таймера во вкладке, чтобы не дёргалась ширина */
+.phase-tabs .tab .tab-timer { display: inline-block; width: 36px; text-align: right; }
 /* Компактные отступы на странице Лобби */
 #lobby-title-row { justify-content: center; margin-top: 8px; }
 #lobby-title { margin: 4px 0; }
@@ -266,3 +331,4 @@ body > * { position: relative; z-index: 1; }
 
 /* Скрывать пустой phase code, чтобы не было фона у пустого <code> */
 #phase-code-2:empty { display: none; }
+#phase-row { display: none; }
