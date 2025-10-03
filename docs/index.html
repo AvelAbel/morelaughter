@@ -94,10 +94,18 @@
     
   </section>
 
-<!-- Шаг 4. Раунд -->
+  <!-- Шаг 4. Раунд -->
   <section class="card hidden" id="step-4">
-    <div class="row" id="game-title-row">
-      <h3 id="game-title">Игра <code id="room-code-2"></code></h3>
+    <div id="game-header" class="game-header">
+      <div class="game-header-inner">
+        <h3 id="game-title" class="game-title">Игра <code id="room-code-2"></code></h3>
+      </div>
+    </div>
+    <div id="phase-tabs" class="phase-tabs hidden">
+      <button type="button" id="tab-composing" class="tab hidden" data-phase="composing" disabled>Придумывание</button>
+      <button type="button" id="tab-answering" class="tab" data-phase="answering" disabled>Ответы</button>
+      <button type="button" id="tab-voting" class="tab" data-phase="voting" disabled>Голосование</button>
+      <button type="button" id="tab-results" class="tab" data-phase="results" disabled>Результаты</button>
     </div>
     <div class="row" id="phase-row">
       <strong>Фаза:</strong>
