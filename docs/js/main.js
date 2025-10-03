@@ -191,6 +191,18 @@ if (btnStartGame) btnStartGame.onclick = async () => {
     renderDots();
     dotsTimer = setInterval(renderDots, 500);
 
+    // Мгновенно показываем экран игры, пока сохраняются настройки и запускается раунд
+    try {
+      showStep(4);
+      const phaseLabel = el('phase-label'); if (phaseLabel) phaseLabel.textContent = 'Подготавливаем раунд…';
+      const answers = el('answers-list'); if (answers) { answers.classList.add('hidden'); answers.innerHTML = ''; }
+      const voteBtnEarly = el('vote'); if (voteBtnEarly) { voteBtnEarly.classList.add('hidden'); voteBtnEarly.disabled = true; }
+      const nextBtnEarly = el('next-round'); if (nextBtnEarly) nextBtnEarly.classList.add('hidden');
+      const endBtnEarly = el('end-game'); if (endBtnEarly) endBtnEarly.classList.add('hidden');
+      const submitEarly = el('submit-answer'); if (submitEarly) submitEarly.classList.add('hidden');
+      const answerEarly = el('answer-text'); if (answerEarly) answerEarly.classList.add('hidden');
+    } catch {}
+
     // Сначала сохраняем настройки
     try {
       const targetScoreInput = el('target-score');

@@ -7,6 +7,82 @@ let roomsSub = null;
 let votesSub = null;
 let playersSub = null;
 
+// --- layout: debounce + hysteresis ---
+let _rafTabs = 0, _compact = false;
+function needCompactNow() {
+  const wrap = document.getElementById('phase-tabs'); if (!wrap) return false;
+  const wasCompact = wrap.classList.contains('compact');
+  // Измеряем всегда для полного режима, чтобы не зависеть от текущего состояния
+  if (wasCompact) wrap.classList.remove('compact');
+  // Форсируем рефлоу, чтобы получить актуальные размеры без compact
+  try { void wrap.offsetWidth; } catch {}
+  const tabs = Array.from(wrap.querySelectorAll('.tab:not(.hidden)'));
+  const overflow = (wrap.scrollWidth > (wrap.clientWidth + 0)) || tabs.some(t => t.scrollWidth > t.clientWidth);
+  if (wasCompact) wrap.classList.add('compact');
+  return overflow;
+}
+export function scheduleTabsLayout(){
+  if (_rafTabs) return;
+  _rafTabs = requestAnimationFrame(() => {
+    _rafTabs = 0;
+    const wrap = document.getElementById('phase-tabs'); if (!wrap) return;
+    const overflow = needCompactNow();
+    // Вход в compact подтверждаем вторым замером через rAF
+    if (!_compact && overflow) {
+      requestAnimationFrame(() => {
+        const wrap2 = document.getElementById('phase-tabs'); if (!wrap2) return;
+        if (needCompactNow()) { _compact = true; wrap2.classList.add('compact'); }
+      });
+      return;
+    }
+    // гистерезис: из compact выходим только если 2 последовательных замера «влезает»
+    if (_compact && !overflow) {
+      // подтверждаем «влезает» вторым замером через rAF
+      requestAnimationFrame(() => {
+        const wrap3 = document.getElementById('phase-tabs'); if (!wrap3) return;
+        if (!needCompactNow()) { _compact = false; wrap3.classList.remove('compact'); }
+      });
+      return;
+    }
+    // Состояние не меняется — поддерживаем текущий класс
+    wrap.classList.toggle('compact', _compact);
+  });
+}
+// Стабилизируем resize: дебаунсим по времени, чтобы не переключать режим во время активного растягивания
+try {
+  let resizeTimer = 0;
+  window.addEventListener('resize', () => {
+    try { if (resizeTimer) clearTimeout(resizeTimer); } catch {}
+    resizeTimer = setTimeout(() => {
+      resizeTimer = 0;
+      scheduleTabsLayout();
+    }, 150);
+  });
+} catch {}
+
+// Немедленное применение раскладки (без rAF) — для первого рендера шага 4
+export function forceTabsLayoutNow() {
+  try {
+    const wrap = document.getElementById('phase-tabs'); if (!wrap) return;
+    // Стартуем в компактном режиме, чтобы избежать первичного мерцания
+    wrap.classList.add('compact');
+    _compact = true;
+    const overflow = needCompactNow();
+    if (!overflow) {
+      // Если всё влезает — снимем compact немедленно
+      _compact = false;
+      wrap.classList.remove('compact');
+    }
+  } catch {}
+}
+
+// Дополнительно: после загрузки шрифтов перепроверим раскладку
+try {
+  if (document && document.fonts && typeof document.fonts.ready?.then === 'function') {
+    document.fonts.ready.then(() => { try { scheduleTabsLayout(); } catch {} });
+  }
+} catch {}
+
 // Детеминированная случайная перестановка по seed (одинаковая для всех в раунде)
 function seed32(s){ let h = 2166136261; for (const c of String(s||'')) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
 function rng(a){ return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t ^= t + Math.imul(t ^ t >>> 7, 61 | t); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -36,7 +112,15 @@ async function autoSubmitPendingVote() {
     try {
       await supabase.from('votes').insert({ round_id: state.currentRoundId, voter_id: uid, answer_id: ansId });
       state.myVoted = true;
-    } catch {}
+    } catch (e) {
+      const msg = String(e?.message || '').toLowerCase();
+      const code = String(e?.code || '');
+      const isDuplicate = msg.includes('duplicate') || msg.includes('conflict') || code === '23505';
+      if (isDuplicate) {
+        // Идемпотентно игнорируем дубликат
+        state.myVoted = true;
+      }
+    }
   } catch {}
 }
 async function resubscribeAnswersRealtime() {
@@ -167,7 +251,7 @@ export async function refreshRoomState() {
   
   const { data: rounds } = await supabase
     .from('rounds')
-    .select('id, phase, question_id, author_id, compose_deadline, question_text, started_at, ended_at')
+    .select('id, phase, question_id, author_id, compose_deadline, question_text, question_source, started_at, ended_at')
     .eq('room_id', state.currentRoomId).order('started_at', { ascending: false }).limit(1);
   const latest = rounds?.[0] || null;
   const prevRoundId = state.currentRoundId;
@@ -340,11 +424,68 @@ export async function refreshRoomState() {
   // Фиксация фазы и поведение UI по фазам
   const prevPhase = state.currentPhase;
   state.currentPhase = latest?.phase || null;
+  // Глобально: при смене фазы останавливаем таймеры неактивных фаз и убираем таймеры только у НЕактивных вкладок
+  try {
+    if (prevPhase !== state.currentPhase) {
+      if (state.currentPhase !== 'answering' && state._answeringTimerId) { clearInterval(state._answeringTimerId); state._answeringTimerId = null; }
+      if (state.currentPhase !== 'voting' && state._votingTimerId) { clearInterval(state._votingTimerId); state._votingTimerId = null; }
+      document.querySelectorAll('#phase-tabs .tab').forEach(tab => {
+        const tabPhase = tab.getAttribute('data-phase');
+        const isCurrent = !!tabPhase && tabPhase === state.currentPhase;
+        if (!isCurrent) {
+          try { const t = tab.querySelector('.tab-timer'); if (t) t.remove(); } catch {}
+        }
+      });
+    }
+  } catch {}
+  // Показ/скрытие вкладки "Придумывание" по источнику вопросов
+  try {
+    const composingTab = document.getElementById('tab-composing');
+    const tabsWrap = document.getElementById('phase-tabs');
+    // Приоритет: режим комнаты, затем — источник текущего раунда
+    const roundQsrc = latest && typeof latest.question_source === 'string' ? latest.question_source : null;
+    const qsrc = (roomInfo?.question_source || roundQsrc || 'preset');
+    if (composingTab) composingTab.classList.toggle('hidden', qsrc !== 'players');
+    scheduleTabsLayout();
+    // После первичной инициализации UI табов — показать контейнер вкладок
+    if (tabsWrap) tabsWrap.classList.remove('hidden');
+  } catch {}
+  // Обновляем активную вкладку фазы
+  try {
+    const tabs = document.querySelectorAll('#phase-tabs .tab');
+    tabs.forEach(tab => {
+      const p = tab.getAttribute('data-phase');
+      tab.classList.toggle('active', !!p && p === state.currentPhase);
+    });
+    scheduleTabsLayout();
+  } catch {}
+  // В фазе "Придумывание" скрываем текстовый лейбл "Вопрос:"
+  try {
+    const qLabel = (document.querySelector('#question-text') || null)?.previousElementSibling || null;
+    if (qLabel) qLabel.classList.toggle('hidden', state.currentPhase === 'composing');
+  } catch {}
+  // На входе в голосование сбрасываем отметки "ответил" (галочки должны проставляться заново как "проголосовал")
+  if (state.currentPhase === 'voting' && prevPhase !== 'voting') {
+    try {
+      if (state.optimisticSubmittedIds && typeof state.optimisticSubmittedIds.clear === 'function') {
+        state.optimisticSubmittedIds.clear();
+      } else {
+        state.optimisticSubmittedIds = new Set();
+      }
+    } catch {}
+  }
   // На входе в answering сбрасываем локальные флаги и гарантируем показ инпута
   if (state.currentPhase === 'answering' && prevPhase !== 'answering') {
     state.mySubmitted = false;
     state.myVoted = false;
     state.selectedAnswerId = null;
+    // Сброс оптимистичных флагов предыдущего раунда
+    try {
+      if (state.optimisticSubmittedIds && typeof state.optimisticSubmittedIds.clear === 'function') state.optimisticSubmittedIds.clear();
+      else state.optimisticSubmittedIds = new Set();
+      if (state.optimisticVotedIds && typeof state.optimisticVotedIds.clear === 'function') state.optimisticVotedIds.clear();
+      else state.optimisticVotedIds = new Set();
+    } catch {}
     const answerInputOnEnter = el('answer-text');
     if (answerInputOnEnter) {
       // Очистка поля при входе в answering новой фазы
@@ -359,15 +500,18 @@ export async function refreshRoomState() {
     const deadlineMsAns = latest?.ended_at ? Date.parse(latest.ended_at) : 0;
     if (deadlineMsAns > 0) {
       if (answeringRow) answeringRow.classList.add('hidden');
-      const phaseLabelElAns = document.getElementById('phase-label');
-      // Стабильная разметка для answering
-      if (phaseLabelElAns && !phaseLabelElAns.querySelector('#phase-ans-left')) {
-        phaseLabelElAns.innerHTML = 'Ответы игроков, осталось: <span id="phase-ans-left"></span>';
-      }
+      // Таймер в активной вкладке (не удаляем действующий у активной вкладки)
+      const ensureAnsTabTimer = () => {
+        const tab = document.getElementById('tab-answering');
+        if (!tab) return null;
+        let sp = tab.querySelector('.tab-timer');
+        if (!sp) { sp = document.createElement('span'); sp.className = 'tab-timer'; tab.appendChild(sp); }
+        return sp;
+      };
       const renderAnsTimer = () => {
         const left = Math.max(0, Math.ceil((deadlineMsAns - Date.now())/1000));
-        const leftEl = document.getElementById('phase-ans-left');
-        if (leftEl) leftEl.textContent = String(left).padStart(2,'0');
+        const sp = ensureAnsTabTimer();
+        if (sp) sp.textContent = ` (${String(left).padStart(2,'0')})`;
         return left;
       };
       renderAnsTimer();
@@ -425,7 +569,10 @@ export async function refreshRoomState() {
         .eq('round_id', state.currentRoundId);
       const votedEarlyMap = new Map((vEarly || []).map(v => [v.voter_id, true]));
       const myIdEarly = state.currentUser?.id;
-      if (myIdEarly) state.myVoted = !!votedEarlyMap.get(myIdEarly);
+      if (myIdEarly) {
+        const optimistic = !!(state.optimisticVotedIds && state.optimisticVotedIds.has(myIdEarly));
+        state.myVoted = optimistic || !!votedEarlyMap.get(myIdEarly);
+      }
     } catch {}
   }
   // Узнаем, ответил ли текущий пользователь
@@ -480,16 +627,16 @@ export async function refreshRoomState() {
     // Таймер голосования: убираем нижнюю строку и показываем внутри phase-label
     const votingRow = document.getElementById('voting-row-message');
     if (votingRow) votingRow.classList.add('hidden');
-    const phaseLabelElVoting = document.getElementById('phase-label');
-    // Инициализируем стабильную разметку внутри phase-label один раз
-    if (phaseLabelElVoting && !phaseLabelElVoting.querySelector('#phase-vote-left')) {
-      phaseLabelElVoting.innerHTML = 'Голосование, осталось: <span id="phase-vote-left"></span>';
-    }
+    // Таймер в активной вкладке (Голосование) — не удаляем существующий у активной вкладки
     const deadlineMsVoting = latest?.ended_at ? Date.parse(latest.ended_at) : 0;
     const renderVotingTimer = () => {
       const left = Math.max(0, Math.ceil((deadlineMsVoting - Date.now())/1000));
-      const leftEl = document.getElementById('phase-vote-left');
-      if (leftEl) leftEl.textContent = String(left).padStart(2,'0');
+      const tab = document.getElementById('tab-voting');
+      if (tab) {
+        let sp = tab.querySelector('.tab-timer');
+        if (!sp) { sp = document.createElement('span'); sp.className = 'tab-timer'; tab.appendChild(sp); }
+        sp.textContent = ` (${String(left).padStart(2,'0')})`;
+      }
       return left;
     };
     if (deadlineMsVoting > 0) {
@@ -541,10 +688,9 @@ export async function refreshRoomState() {
     const submitBtn = el('submit-answer'); if (submitBtn) submitBtn.classList.add('hidden');
     // Кнопка следующего раунда в голосовании скрыта
     const nextBtnVoting = el('next-round'); if (nextBtnVoting) nextBtnVoting.classList.add('hidden');
-    // Загружаем варианты только на входе в фазу
-    if (prevPhase !== 'voting') {
-      try { await loadAnswers(); } catch (e) { console.error('loadAnswers on voting phase failed:', e); }
-    }
+    // Загружаем варианты в голосовании на каждом обновлении,
+    // чтобы подтянуть ответы, пришедшие после входа в фазу
+    try { await loadAnswers(); } catch (e) { console.error('loadAnswers on voting phase failed:', e); }
     // На каждом обновлении: восстановить выбор и применить disabled по myVoted
     const contNow = el('answers-list');
     if (contNow) {
@@ -581,7 +727,10 @@ export async function refreshRoomState() {
     // Загружаем результаты только на входе в фазу results
     if (prevPhase !== 'results') {
       try {
-        const { data: ans } = await supabase.from('answers').select('id, text, author_id').eq('round_id', state.currentRoundId);
+        const { data: ans } = await supabase.from('answers')
+          .select('id, text, author_id')
+          .eq('round_id', state.currentRoundId)
+          .order('id', { ascending: true });
         const ordered = shuffleSeeded(ans || [], state.currentRoundId);
         const { data: votesAll } = await supabase.from('votes').select('answer_id').eq('round_id', state.currentRoundId);
         const counts = new Map();
@@ -591,10 +740,24 @@ export async function refreshRoomState() {
           container.innerHTML = '';
           const wrap = document.createElement('div');
           ordered.forEach(a => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn-action vote-option';
+            btn.dataset.answerId = a.id;
+            btn.dataset.authorId = a.author_id || '';
+            btn.setAttribute('role', 'button');
+            btn.textContent = a.text;
+            // Нельзя кликать в results, но стиль остаётся активным (не серый)
+            btn.disabled = true;
+            btn.classList.remove('muted');
             const flames = '🔥'.repeat(counts.get(a.id) || 0);
-            const row = document.createElement('div');
-            row.textContent = `${a.text} ${flames}`.trim();
-            wrap.appendChild(row);
+            if (flames) {
+              const cnt = document.createElement('span');
+              cnt.style.marginLeft = '8px';
+              cnt.textContent = flames;
+              btn.appendChild(cnt);
+            }
+            wrap.appendChild(btn);
           });
           container.appendChild(wrap);
         }
@@ -727,15 +890,32 @@ export async function refreshRoomState() {
   // players/composing UI
   if (roomInfo?.question_source === 'players' && latest?.phase === 'composing') {
     const isAuthor = latest.author_id && latest.author_id === state.currentUser?.id;
-    if (composeRowMsg) composeRowMsg.classList.remove('hidden');
-    if (composeMsg) composeMsg.textContent = isAuthor ? 'Придумайте вопрос'
-      : `Игрок ${(players||[]).find(p=>p.player_id===latest.author_id)?.nickname || ''} придумывает вопрос`;
+    // Показываем ожидание только не-автору
+    try {
+      if (!isAuthor && composeRowMsg) composeRowMsg.classList.remove('hidden');
+      if (!isAuthor && composeMsg) {
+        const authorNick = (players||[]).find(p=>p.player_id===latest.author_id)?.nickname || '';
+        composeMsg.textContent = `Ждем, когда ${authorNick} придумает вопрос.`;
+      }
+    } catch {}
     if (isAuthor && composeRowInput) composeRowInput.classList.remove('hidden');
 
     const deadlineMs = latest.compose_deadline ? Date.parse(latest.compose_deadline) : Date.now();
+    // Переносим таймер в вкладку "Придумывание"
+    try {
+      const tab = document.getElementById('tab-composing');
+      if (tab && !tab.classList.contains('hidden')) {
+        let sp = tab.querySelector('.tab-timer');
+        if (!sp) { sp = document.createElement('span'); sp.className = 'tab-timer'; tab.appendChild(sp); }
+      }
+    } catch {}
     const renderTimer = () => {
       const left = Math.max(0, Math.ceil((deadlineMs - Date.now())/1000));
-      if (composeTimer) composeTimer.textContent = String(left).padStart(2,'0');
+      try {
+        const tab = document.getElementById('tab-composing');
+        const sp = tab ? tab.querySelector('.tab-timer') : null;
+        if (sp) sp.textContent = ` (${String(left).padStart(2,'0')})`;
+      } catch {}
       return left;
     };
     renderTimer();
@@ -797,6 +977,9 @@ export async function refreshRoomState() {
         .eq('id', state.currentRoundId)
         .eq('phase', 'composing');
     }
+  } else {
+    // Не composing: удалить таймер у вкладки "Придумывание"
+    try { const t = document.querySelector('#tab-composing .tab-timer'); if (t) t.remove(); } catch {}
   }
 
   // Если комната вышла из лобби — переключаем всех на шаг 4 (раунды)
@@ -874,6 +1057,16 @@ export async function refreshRoomState() {
     }
   } catch {}
 
+  // Мгновенная синхронизация галочек: учитываем оптимистичные локальные флаги
+  try {
+    if (state.optimisticSubmittedIds && state.optimisticSubmittedIds.size) {
+      for (const pid of state.optimisticSubmittedIds) submittedMap.set(pid, true);
+    }
+    if (state.optimisticVotedIds && state.optimisticVotedIds.size) {
+      for (const pid of state.optimisticVotedIds) votedMap.set(pid, true);
+    }
+  } catch {}
+
   // В фазе голосования синхронизируем локальный флаг проголосовал/нет
   if (state.currentPhase === 'voting') {
     const myId = state.currentUser?.id;
@@ -889,10 +1082,13 @@ export async function refreshRoomState() {
     try { ul.style.listStyleType = 'decimal'; } catch {}
     sortedPlayers.forEach((p) => {
       const li = document.createElement('li');
+      li.dataset.playerId = p.player_id;
       const score = Number(p.score ?? 0);
       const markAnswered = submittedMap.get(p.player_id);
       const markVoted = votedMap.get(p.player_id);
-      const check = (markAnswered || markVoted) ? ' ✅' : '';
+      const showAnswered = state.currentPhase === 'answering';
+      const showVoted = (state.currentPhase === 'voting' || state.currentPhase === 'results');
+      const check = ((showAnswered && markAnswered) || (showVoted && markVoted)) ? ' ✅' : '';
       const afk = p.is_active === false ? ' (AFK)' : '';
       li.textContent = `${p.nickname}${p.is_host ? ' ⭐' : ''}${check}${afk} — очки: ${score}`;
       ul.appendChild(li);
@@ -1033,6 +1229,49 @@ export async function refreshRoomState() {
 
 export async function startRound() {
   if (!state.currentRoomId) return alert('Сначала комната');
+  // Мгновенная локальная инициализация следующего раунда до сетевых операций
+  try {
+    // Сброс локальных флагов
+    state.mySubmitted = false;
+    state.myVoted = false;
+    state.selectedAnswerId = null;
+    try {
+      if (state.optimisticSubmittedIds && typeof state.optimisticSubmittedIds.clear === 'function') state.optimisticSubmittedIds.clear();
+      else state.optimisticSubmittedIds = new Set();
+      if (state.optimisticVotedIds && typeof state.optimisticVotedIds.clear === 'function') state.optimisticVotedIds.clear();
+      else state.optimisticVotedIds = new Set();
+    } catch {}
+    // Обновление UI: прячем результаты, показываем ввод ответа
+    const banner = el('winner-banner'); if (banner) { banner.classList.add('hidden'); banner.textContent = ''; }
+    const nextBtn = el('next-round'); if (nextBtn) nextBtn.classList.add('hidden');
+    const endBtn = el('end-game'); if (endBtn) endBtn.classList.add('hidden');
+    const answersContainerEarly = el('answers-list'); if (answersContainerEarly) { answersContainerEarly.classList.add('hidden'); answersContainerEarly.innerHTML = ''; }
+    const voteBtnEarly = el('vote'); if (voteBtnEarly) { voteBtnEarly.classList.add('hidden'); voteBtnEarly.disabled = true; }
+    const answerInputEarly = el('answer-text'); if (answerInputEarly) { try { answerInputEarly.value = ''; } catch {}; answerInputEarly.classList.add('hidden'); }
+    const submitEarly = el('submit-answer'); if (submitEarly) submitEarly.classList.add('hidden');
+    const qTextEarly = el('question-text'); if (qTextEarly) qTextEarly.textContent = '—';
+    const phaseLabelEarly = document.getElementById('phase-label'); if (phaseLabelEarly) phaseLabelEarly.textContent = 'Ответы игроков…';
+    // Мгновенно убрать галочки из списков игроков
+    const stripChecks = (ulId) => {
+      const ul = document.getElementById(ulId);
+      if (!ul) return;
+      Array.from(ul.children || []).forEach((li) => {
+        try {
+          if (!li) return;
+          const txt = String(li.textContent || '');
+          if (txt.includes('✅')) li.textContent = txt.replace('✅', '').replace(/\s{2,}/g, ' ').replace(/\s+—/,' —').trim();
+        } catch {}
+      });
+    };
+    stripChecks('players-list');
+    stripChecks('players-list-round');
+    // Широковещательный сигнал о подготовке раунда, чтобы у всех мгновенно показался ввод
+    try {
+      if (state.roomChannel) {
+        state.roomChannel.send({ type: 'broadcast', event: 'round_starting', payload: { room_id: state.currentRoomId } });
+      }
+    } catch {}
+  } catch {}
   let qid = null;
   const { data: cfg } = await supabase
     .from('rooms').select('question_source, question_seconds').eq('id', state.currentRoomId).single();
@@ -1118,6 +1357,22 @@ export async function submitAnswer() {
 
   const btn = el('submit-answer');
   if (btn) btn.disabled = true;
+  // Мгновенная локальная реакция: скрыть поле/кнопку, пометить себя как отправившего и оповестить комнату
+  try {
+    if (uid) { try { state.optimisticSubmittedIds.add(uid); } catch {} }
+    // Сразу считаем, что ответ отправлен в этом раунде (для логики показа инпута)
+    state.mySubmitted = true;
+    if (input) input.classList.add('hidden');
+    if (btn) btn.classList.add('hidden');
+    // Немедленно перерисуем список игроков с галочкой
+    await refreshRoomState();
+    // Немедленно отправим широковещательное событие с идентификатором игрока
+    try {
+      if (state.roomChannel) {
+        state.roomChannel.send({ type: 'broadcast', event: 'answer_submitted', payload: { round_id: state.currentRoundId, player_id: uid } });
+      }
+    } catch {}
+  } catch {}
   try {
     console.log('[submitAnswer] inserting answer...');
     const { error } = await supabase.from('answers').insert({
@@ -1136,17 +1391,13 @@ export async function submitAnswer() {
         return;
       }
       alert(error.message);
+      // Откат оптимистичной пометки при ошибке
+      try { if (uid && state.optimisticSubmittedIds?.has(uid)) state.optimisticSubmittedIds.delete(uid); } catch {}
       return;
     }
     console.log('[submitAnswer] inserted successfully');
     input.value = '';
     state.mySubmitted = true;
-    // Оповещаем других участников комнаты о новом ответе
-    try {
-      if (state.roomChannel) {
-        state.roomChannel.send({ type: 'broadcast', event: 'answer_submitted', payload: { round_id: state.currentRoundId } });
-      }
-    } catch {}
     await refreshRoomState();
   } finally {
     if (btn) btn.disabled = false;
@@ -1188,7 +1439,8 @@ export async function loadAnswers() {
   const { data: ans, error } = await supabase
     .from('answers')
     .select('id, text, author_id')
-    .eq('round_id', state.currentRoundId);
+    .eq('round_id', state.currentRoundId)
+    .order('id', { ascending: true });
   if (error) return alert(error.message);
   const ordered = shuffleSeeded(ans || [], state.currentRoundId);
   const myUid = state.currentUser?.id || null;
@@ -1256,35 +1508,58 @@ export async function vote() {
     const inputs = Array.from(document.querySelectorAll('input[name="vote-answer"]'));
     if (inputs.length >= 3) {
       const myUid = state.currentUser?.id || null;
-      const authorId = checked?.dataset?.authorId || '';
+      const authorId = checkedBtn?.dataset?.authorId || '';
       if (myUid && authorId && myUid === authorId) {
         if (voteBtnLock) { voteBtnLock.disabled = false; voteBtnLock.classList.remove('muted'); }
         return alert('При 3+ вариантах нельзя голосовать за свой ответ');
       }
     }
   } catch {}
+  // Оптимистично помечаем свой голос и мгновенно скрываем кнопку голосования
+  try {
+    const myIdInstant = state.currentUser?.id || null;
+    if (myIdInstant) { try { state.optimisticVotedIds.add(myIdInstant); } catch {} }
+    // Пометим локально как проголосовавшего, чтобы избежать повторных вставок (в т.ч. авто-сабмита)
+    state.myVoted = true;
+    const rs = el('round-state'); if (rs) rs.textContent = 'Голос учтён.';
+    const container = el('answers-list');
+    if (container) {
+      container.classList.add('muted');
+      container.querySelectorAll('.vote-option').forEach(btn => { btn.disabled = true; btn.setAttribute('aria-checked', btn.getAttribute('aria-checked') || 'false'); });
+    }
+    const voteBtn = el('vote'); if (voteBtn) { voteBtn.classList.add('hidden'); voteBtn.disabled = true; }
+    // Принудительно применяем локальное состояние без повторных перерисовок, чтобы избежать мерцания
+    // Актуализацию списка (галочки) сделает последующий refresh в обычном цикле
+    try {
+      if (state.roomChannel) {
+        state.roomChannel.send({ type: 'broadcast', event: 'vote_submitted', payload: { round_id: state.currentRoundId, player_id: myIdInstant } });
+      }
+    } catch {}
+  } catch {}
+  // Короткая задержка перед запросом — даём DOM применить изменения и избежать гонки с подписками
+  try { await new Promise(r => setTimeout(r, 0)); } catch {}
   const { error } = await supabase.from('votes').insert({
     round_id: state.currentRoundId, voter_id: state.currentUser.id, answer_id: ansId
   });
-  if (error) { if (voteBtnLock) { voteBtnLock.disabled = false; voteBtnLock.classList.remove('muted'); } return alert(error.message); }
-  const rs = el('round-state'); if (rs) rs.textContent = 'Голос учтён.';
-  // Локально помечаем, что игрок проголосовал; не скрываем варианты
-  state.myVoted = true;
-  // Оповещаем комнату о новом голосе, чтобы обновился UI у всех, в т.ч. у хоста
-  try {
-    if (state.roomChannel) {
-      state.roomChannel.send({ type: 'broadcast', event: 'vote_submitted', payload: { round_id: state.currentRoundId } });
+  if (error) {
+    const msg = String(error.message || '').toLowerCase();
+    const code = String(error.code || '');
+    const isDuplicate = msg.includes('duplicate') || msg.includes('conflict') || code === '23505';
+    if (isDuplicate) {
+      // Идемпотентно: считаем успехом, ничего не откатываем
+    } else {
+      // Откат оптимистичной пометки и возврат UI
+      try { const myId = state.currentUser?.id || null; if (myId && state.optimisticVotedIds?.has(myId)) state.optimisticVotedIds.delete(myId); } catch {}
+      state.myVoted = false;
+      const rs = el('round-state'); if (rs) rs.textContent = '';
+      const container = el('answers-list'); if (container) { container.classList.remove('muted'); container.querySelectorAll('.vote-option').forEach(btn => { btn.disabled = false; }); }
+      const voteBtn = el('vote'); if (voteBtn) { voteBtn.classList.remove('hidden'); voteBtn.disabled = false; }
+      await refreshRoomState();
+      if (voteBtnLock) { voteBtnLock.disabled = false; voteBtnLock.classList.remove('muted'); }
+      return alert(error.message);
     }
-  } catch {}
-  // Отключаем радиокнопки и скрываем кнопку голосования у проголосовавшего
-  const container = el('answers-list');
-  if (container) {
-    container.classList.add('muted');
-    container.querySelectorAll('.vote-option').forEach(btn => { btn.disabled = true; });
   }
-  const voteBtn = el('vote'); if (voteBtn) { voteBtn.classList.add('hidden'); voteBtn.disabled = true; }
-  // Обновим состояние, чтобы появилась галочка у проголосовавшего
-  await refreshRoomState();
+  // Нормальный путь: уже помечены оптимистично, просто завершаем
 }
 
 export async function finalize() {

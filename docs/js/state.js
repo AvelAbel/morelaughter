@@ -13,7 +13,10 @@ export const state = {
   roomPlayersCache: {},
   finalizing: false,              // защита от повторной финализации
   autoJumpToRound: true,          // разрешить автопереход на шаг 4 при событиях
-  customQuestionByRoundId: {}     // текст вопроса для режима players по roundId
+  customQuestionByRoundId: {},    // текст вопроса для режима players по roundId
+  // Оптимистичные флаги для мгновенных галочек
+  optimisticSubmittedIds: new Set(),
+  optimisticVotedIds: new Set()
 };
 export const el = (id) => document.getElementById(id);
 export const steps = [el('step-1'), el('step-2'), el('step-3'), el('step-4')];
@@ -44,5 +47,15 @@ export function showStep(n) {
     import('./round.js').then(({ refreshRoomState }) => {
       refreshRoomState();
     });
+  }
+
+  // При входе на шаг 4 — один раз применить раскладку вкладок, чтобы избежать мерцания
+  if (n === 4) {
+    try {
+      import('./round.js').then(({ forceTabsLayoutNow, scheduleTabsLayout }) => {
+        try { forceTabsLayoutNow(); } catch {}
+        try { scheduleTabsLayout(); } catch {}
+      });
+    } catch {}
   }
 }

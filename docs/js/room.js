@@ -13,8 +13,52 @@ function subscribeToRoomRealtime(roomId) {
     const channel = supabase.channel(`room-${roomId}`);
     channel
       // Получаем широковещательные события от клиентов (например, отправка ответа)
-      .on('broadcast', { event: 'answer_submitted' }, () => {
-        // Простое обновление состояния, чтобы у всех появилась галочка ✅
+      .on('broadcast', { event: 'answer_submitted' }, (payload) => {
+        try {
+          const pid = payload?.payload?.player_id || null;
+          if (pid && state.optimisticSubmittedIds) state.optimisticSubmittedIds.add(pid);
+          // Мгновенно нарисуем галочку у игрока без ожидания загрузки
+          if (pid) {
+            const applyCheck = (ulId) => {
+              const ul = document.getElementById(ulId);
+              if (!ul) return;
+              const items = Array.from(ul.children || []);
+              items.forEach((li) => {
+                try {
+                  if (!li || li.dataset?.playerId !== pid) return;
+                  const txt = String(li.textContent || '');
+                  // Вставим ✅ перед " — очки:" если ещё нет
+                  if (txt.includes('✅')) return;
+                  const sep = ' — очки:';
+                  const idx = txt.indexOf(sep);
+                  if (idx >= 0) {
+                    const left = txt.slice(0, idx).trimEnd();
+                    const right = txt.slice(idx);
+                    li.textContent = `${left} ✅${right}`;
+                  } else {
+                    li.textContent = `${txt} ✅`;
+                  }
+                } catch {}
+              });
+            };
+            applyCheck('players-list');
+            applyCheck('players-list-round');
+          }
+          // Хост: мгновенный переход к голосованию, если все активные отправили ответы
+          try {
+            if (state.isHost && state.currentRoundId) {
+              const allPlayers = Object.values(state.roomPlayersCache || {});
+              const activeIds = allPlayers.filter(p => p && p.is_active !== false).map(p => p.player_id);
+              if (activeIds.length > 0) {
+                const haveAll = activeIds.every(id => state.optimisticSubmittedIds && state.optimisticSubmittedIds.has(id));
+                if (haveAll) {
+                  import('./round.js').then(({ startVoting }) => { try { startVoting(); } catch {} });
+                }
+              }
+            }
+          } catch {}
+        } catch {}
+        // Обновляем состояние, чтобы у всех появилась галочка ✅
         refreshRoomState();
       })
       .on('broadcast', { event: 'player_joined' }, () => {
@@ -25,7 +69,39 @@ function subscribeToRoomRealtime(roomId) {
         // Переобновляем UI чтобы гарантированно показать поле ввода начала раунда
         refreshRoomState();
       })
-      .on('broadcast', { event: 'vote_submitted' }, () => {
+      .on('broadcast', { event: 'round_starting' }, () => {
+        // Мгновенное обновление UI до вставки раунда в БД
+        try {
+          const banner = document.getElementById('winner-banner'); if (banner) { banner.classList.add('hidden'); banner.textContent = ''; }
+          const nextBtn = document.getElementById('next-round'); if (nextBtn) nextBtn.classList.add('hidden');
+          const endBtn = document.getElementById('end-game'); if (endBtn) endBtn.classList.add('hidden');
+          const answers = document.getElementById('answers-list'); if (answers) { answers.classList.add('hidden'); answers.innerHTML = ''; }
+          const voteBtn = document.getElementById('vote'); if (voteBtn) { voteBtn.classList.add('hidden'); voteBtn.disabled = true; }
+          const answer = document.getElementById('answer-text'); if (answer) { try { answer.value = ''; } catch {}; answer.classList.add('hidden'); }
+          const submit = document.getElementById('submit-answer'); if (submit) submit.classList.add('hidden');
+          const qText = document.getElementById('question-text'); if (qText) qText.textContent = '—';
+          const phaseLabel = document.getElementById('phase-label'); if (phaseLabel) phaseLabel.textContent = 'Ответы игроков…';
+          // Убираем галочки из списков игроков мгновенно
+          const stripChecks = (ulId) => {
+            const ul = document.getElementById(ulId);
+            if (!ul) return;
+            Array.from(ul.children || []).forEach((li) => {
+              try {
+                if (!li) return;
+                const txt = String(li.textContent || '');
+                if (txt.includes('✅')) li.textContent = txt.replace('✅', '').replace(/\s{2,}/g, ' ').replace(/\s+—/,' —').trim();
+              } catch {}
+            });
+          };
+          stripChecks('players-list');
+          stripChecks('players-list-round');
+        } catch {}
+      })
+      .on('broadcast', { event: 'vote_submitted' }, (payload) => {
+        try {
+          const pid = payload?.payload?.player_id || null;
+          if (pid && state.optimisticVotedIds) state.optimisticVotedIds.add(pid);
+        } catch {}
         // Обновление состояния при голосе любого игрока (включая для хоста)
         refreshRoomState();
       })
@@ -144,6 +220,19 @@ export async function createRoom() {
   state.roomPlayersCache = {};
   localStorage.setItem('last_room_code', state.currentRoomCode);
   state.autoJumpToRound = true;
+
+  // Мгновенно показываем все поля лобби единым кадром
+  try {
+    showStep(3);
+    const lobbyAdmin = document.getElementById('lobby-admin');
+    if (lobbyAdmin) lobbyAdmin.classList.remove('hidden');
+    const roomCodeEl = document.getElementById('room-code-lobby'); if (roomCodeEl) roomCodeEl.textContent = state.currentRoomCode || '';
+    // Инициализируем значения инпутов из только что созданной комнаты
+    const ti = document.getElementById('target-score'); if (ti) { ti.value = String(initTarget); ti.dataset.dirty = '1'; }
+    const qs = document.getElementById('question-seconds'); if (qs) { qs.value = String(initSecs); qs.dataset.dirty = '1'; }
+    const vs = document.getElementById('vote-seconds'); if (vs) { vs.value = String(initVoteSecs); vs.dataset.dirty = '1'; }
+    const srcSel = document.getElementById('qsrc-select'); if (srcSel && (initSrc === 'players' || initSrc === 'preset')) srcSel.value = initSrc;
+  } catch {}
   
   console.log('Creating room player entry:', { 
     player_id: user.id, 
@@ -355,7 +444,30 @@ export async function joinByCode(codeRaw, statusEl, buttonEl) {
 export async function startGameFromLobby() {
   try {
     if (!state.currentRoomId) return showStep(4);
-    await supabase.from('rooms').update({ status: 'in_progress' }).eq('id', state.currentRoomId);
+    // 1) Сброс UI победителя от предыдущей игры (на всякий случай до обновлений БД)
+    try {
+      const banner = document.getElementById('winner-banner');
+      const endBtn = document.getElementById('end-game');
+      const nextBtn = document.getElementById('next-round');
+      if (banner) { banner.classList.add('hidden'); banner.textContent = ''; }
+      if (endBtn) endBtn.classList.add('hidden');
+      if (nextBtn) nextBtn.classList.add('hidden');
+    } catch {}
+
+    // 2) Сбрасываем очки всех игроков комнаты, чтобы победитель не подтянулся из прошлой игры
+    try {
+      await supabase.from('room_players')
+        .update({ score: 0 })
+        .eq('room_id', state.currentRoomId);
+    } catch (e) {
+      console.error('Failed to reset scores on new game start:', e);
+    }
+
+    // 3) Переводим комнату в активное состояние и снимаем архивный флаг (если был)
+    await supabase
+      .from('rooms')
+      .update({ status: 'in_progress', archived: false, archived_at: null })
+      .eq('id', state.currentRoomId);
   } catch (e) {
     console.error('Failed to update room status on startGame:', e);
   } finally {
